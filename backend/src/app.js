@@ -1,10 +1,12 @@
 import express from 'express';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import connectSqlite3 from 'connect-sqlite3';
+import pg from 'pg';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { env } from './config/env.js';
+import { assertEnvironment, env } from './config/env.js';
 import authRoutes from './routes/authRoutes.js';
 import lessonRoutes from './routes/lessonRoutes.js';
 import attemptRoutes from './routes/attemptRoutes.js';
@@ -14,9 +16,33 @@ import { notFoundMiddleware } from './middleware/notFound.middleware.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const sessionDirectory = resolve(here, '../database');
-mkdirSync(sessionDirectory, { recursive: true });
-const SQLiteStore = connectSqlite3(session);
+assertEnvironment();
+
+let sessionStore;
+let sessionPool;
+if (env.databaseUrl) {
+  const { Pool } = pg;
+  const PostgresStore = connectPgSimple(session);
+  sessionPool = new Pool({
+    connectionString: env.databaseUrl,
+    max: 2,
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 10000,
+    ssl: true,
+  });
+  sessionStore = new PostgresStore({
+    pool: sessionPool,
+    schemaName: 'public',
+    tableName: 'linuxlab_sessions',
+    createTableIfMissing: false,
+    pruneSessionInterval: 900,
+  });
+} else {
+  const sessionDirectory = resolve(here, '../database');
+  mkdirSync(sessionDirectory, { recursive: true });
+  const SQLiteStore = connectSqlite3(session);
+  sessionStore = new SQLiteStore({ dir: sessionDirectory, db: 'sessions.sqlite', table: 'sessions', concurrentDB: true });
+}
 const app = express();
 
 app.disable('x-powered-by');
@@ -24,14 +50,21 @@ app.set('trust proxy', env.nodeEnv === 'production' ? 1 : 'loopback');
 app.use(express.json({ limit: '48kb' }));
 app.use(session({
   name: 'linux.sid',
-  store: new SQLiteStore({ dir: sessionDirectory, db: 'sessions.sqlite', table: 'sessions', concurrentDB: true }),
+  store: sessionStore,
   secret: env.sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true, secure: env.nodeEnv === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 14 },
 }));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', (_req, res) => {
+  if (!sessionPool) return res.json({ ok: true, sessionStore: 'sqlite' });
+  sessionPool.query("SELECT to_regclass('public.linuxlab_sessions') IS NOT NULL AS ready")
+    .then(({ rows }) => rows[0]?.ready
+      ? res.json({ ok: true, sessionStore: 'postgres' })
+      : res.status(503).json({ ok: false, sessionStore: 'postgres', message: 'Session table is not installed.' }))
+    .catch(() => res.status(503).json({ ok: false, sessionStore: 'postgres' }));
+});
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/units', lessonRoutes);
 app.use('/api/v1/lessons', lessonRoutes);

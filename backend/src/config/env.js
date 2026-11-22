@@ -12,10 +12,12 @@ export const env = {
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:3000',
   supabaseUrl: process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL,
   supabaseKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY,
+  databaseUrl: process.env.DATABASE_URL,
   sessionSecret: process.env.SESSION_SECRET || 'local-development-only-change-before-deploying',
 };
 
 export function assertEnvironment() {
   if (!env.supabaseUrl || !env.supabaseKey) throw new Error('Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in backend/.env.');
   if (env.nodeEnv === 'production' && env.sessionSecret === 'local-development-only-change-before-deploying') throw new Error('Set SESSION_SECRET in the production environment.');
+  if (env.nodeEnv === 'production' && !env.databaseUrl) throw new Error('Set DATABASE_URL to the Supabase transaction-pooler connection string in the production environment.');
 }

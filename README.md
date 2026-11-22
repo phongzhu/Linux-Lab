@@ -30,13 +30,19 @@ For Gmail SMTP, use `smtp.gmail.com` on port `465`, with the same Gmail address 
 
 For a fresh project, also run `backend/database/seeds/001_training_lessons.sql` after the schema migration to populate the 15 lesson records. The seed file is generated from the curriculum and is data only; it is not another schema migration.
 
+## Vercel deployment
+
+The root `vercel.json` routes `/api/*` to Express and all other paths to React. In Vercel, keep the project root at `./` and the framework preset at **Services**. Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SESSION_SECRET`, and `DATABASE_URL` for Production and Preview. `DATABASE_URL` must be the Supabase **Transaction pooler** connection string for serverless use; it contains the database password, so keep it as a server-side Vercel variable and never use a `REACT_APP_` prefix.
+
+Before deploying, apply `supabase/migrations/20261122132610_vercel_session_store.sql` to the configured Supabase project. Vercel's read-only function filesystem cannot store the SQLite sessions used for local development, so production uses the `public.linuxlab_sessions` Postgres table instead. The migration enables RLS and denies Data API roles access to session data. Redeploy after adding or changing Vercel environment variables.
+
 ## Project structure
 
 - `frontend/src/components`, `pages`, `hooks`, `services`, `context`, and `styles` contain React UI, page-level CSS, frontend state behavior, and API calls.
 - `frontend/public` contains the React app's static files.
 - `backend/src/config`, `routes`, `controllers`, `services`, `middleware`, and `simulation` contain the Express API and server-side simulation.
 - Backend services own Supabase queries and business logic; controllers only handle HTTP request/response mapping.
-- `supabase/migrations/` owns Supabase schema changes. `backend/database/seeds/` contains lesson seed SQL and its generator, while `backend/database/` also stores the runtime SQLite session file.
+- `supabase/migrations/` owns Supabase schema changes. `backend/database/seeds/` contains lesson seed SQL and its generator. Local development uses SQLite for sessions; Vercel uses the protected Supabase Postgres session table.
 
 The root `src/` folder has been removed: the React source now lives under `frontend/src/`. `backend/src/` is the Express source tree.
 
