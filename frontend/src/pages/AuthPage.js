@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthLayout from '../components/AuthLayout';
 import AuthLoadingScreen from '../components/AuthLoadingScreen';
@@ -181,7 +182,8 @@ export default function AuthPage() {
 
   if (postVerifyPhase === 'loading') return <AuthLoadingScreen/>;
 
-  return <AuthLayout>
+  return <>
+    <AuthLayout>
     <div className={styles.card} ref={cardRef}>
       <div ref={contentRef} className={styles.modeContent} data-phase={transitionPhase} data-direction={transitionDirection}>
       <h2 ref={headingRef} tabIndex="-1">{mode === 'verify' ? 'Check your email' : mode === 'login' ? 'Login Page' : 'Create account'}</h2>
@@ -236,7 +238,8 @@ export default function AuthPage() {
       </div> : <p className={styles.switch}>{mode === 'login' ? 'New to LinuxLab?' : 'Already have an account?'} <button type="button" onClick={switchMode} disabled={busy || transitionPhase !== 'idle'}>{mode === 'login' ? 'Create account' : 'Sign in'}</button></p>}
       </div>
     </div>
-    {postVerifyPhase === 'success' && <div className={styles.successBackdrop}>
+    </AuthLayout>
+    {postVerifyPhase === 'success' && createPortal(<div className={styles.successBackdrop}>
       <section ref={successModalRef} className={styles.successModal} role="dialog" aria-modal="true" aria-labelledby="activation-title" aria-describedby="activation-description" tabIndex="-1">
         <div className={styles.successIcon} aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.2 4.2L19 7"/></svg></div>
         <p className={styles.successEyebrow}>EMAIL VERIFIED</p>
@@ -245,6 +248,6 @@ export default function AuthPage() {
         <div className={styles.successProgress} aria-hidden="true"><span/></div>
         <span className="sr-only" role="status" aria-live="polite">Your account was created successfully. Continuing in five seconds.</span>
       </section>
-    </div>}
-  </AuthLayout>;
+    </div>, document.body)}
+  </>;
 }
