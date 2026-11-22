@@ -1,0 +1,57 @@
+.modal-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 22px; background: rgba(20,43,47,.72); backdrop-filter: blur(5px); }
+.guide-backdrop { animation: guide-backdrop-in 220ms ease-out both; }
+.guide-backdrop.is-closing { animation: guide-backdrop-out 680ms ease-in both; pointer-events: none; }
+.guide-modal { position: relative; isolation: isolate; display: flex; width: min(900px, 100%); max-height: 88vh; flex-direction: column; overflow: hidden; padding: 27px 32px 22px 76px; border: 1px solid #d8d0be; border-radius: 15px; background-color: #fffdf6; background-image: radial-gradient(circle at 13px 14px, #c9bea7 0 2.5px, #f2ead8 3px 5px, transparent 5.5px), linear-gradient(90deg, transparent 0 57px, rgba(201,126,112,.32) 57px 58px, transparent 58px), repeating-linear-gradient(to bottom, transparent 0 31px, rgba(104,145,157,.105) 31px 32px); background-position: 0 15px, 0 0, 0 0; background-repeat: repeat-y, no-repeat, repeat; background-size: 28px 42px, 100% 100%, 100% 32px; box-shadow: 0 25px 70px rgba(8,25,30,.4), 0 5px 0 #e5ddca; }
+.guide-modal { transform-origin:50% 40%; animation: guide-page-in 340ms cubic-bezier(.2,.72,.28,1) both; will-change:transform,opacity; }
+.guide-modal::after { position:absolute; z-index:5; inset:0; border-radius:inherit; content:""; opacity:0; pointer-events:none; background:linear-gradient(34deg,transparent 47%,rgba(84,99,91,.22) 48%,transparent 49%),linear-gradient(146deg,transparent 42%,rgba(84,99,91,.17) 43%,transparent 44%),linear-gradient(82deg,transparent 55%,rgba(84,99,91,.12) 56%,transparent 57%),repeating-conic-gradient(from 16deg at 50% 50%,transparent 0 12deg,rgba(84,99,91,.035) 13deg 16deg,transparent 17deg 29deg); mix-blend-mode:multiply; }
+.guide-modal.is-closing { transform-origin:50% 50%; animation: guide-paper-crumple 680ms cubic-bezier(.55,.02,.82,.36) both; }
+.guide-modal.is-closing::after { animation: guide-paper-wrinkle 680ms ease-in both; mask-image:radial-gradient(ellipse at center, #000 0%, rgba(0,0,0,.8) 28%, transparent 68%); }
+.crumple-ball { position:absolute; z-index:2; top:50%; left:50%; width:clamp(160px,22vw,250px); height:auto; overflow:visible; opacity:0; pointer-events:none; transform:translate(-50%,-50%) scale(.08) rotate(-16deg); filter:drop-shadow(0 18px 18px rgba(14,29,32,.3)); }
+.guide-backdrop.is-closing .crumple-ball { animation: crumpled-paper-emerge 680ms ease-in-out both; }
+.guide-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 18px; margin: -27px -32px 0 -12px; padding: 27px 32px 15px 12px; border-bottom: 1px dashed #d9d4c5; background: rgba(255,253,246,.97); }
+.guide-head .eyebrow { color: #8d7955; font-size: 9px; letter-spacing: 1.4px; }
+.guide-head h2 { margin: 5px 0 4px; color: #273d3f; font-size: 24px; letter-spacing: -.8px; }
+.guide-head p { margin: 0; color: #74817c; font-size: 12px; }
+.modal-close { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 1px solid #d9d7c8; border-radius: 9px; background: #fffef9; color: #617572; cursor: pointer; transition: transform .15s, background .15s; }
+.modal-close:hover { transform: rotate(4deg); background: #edf3e9; }
+.guide-scroll { min-height: 0; flex: 1 1 auto; overflow-y: auto; margin-right: 12px; padding-right: 8px; scrollbar-color: #b8c8bd #f0eddf; scrollbar-gutter: stable; scrollbar-width: thin; }
+.guide-scroll::-webkit-scrollbar { width: 10px; }
+.guide-scroll::-webkit-scrollbar-track { margin: 6px 0; border-radius: 10px; background: #f0eddf; }
+.guide-scroll::-webkit-scrollbar-thumb { border: 3px solid #f0eddf; border-radius: 10px; background: #b8c8bd; }
+.command-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; margin: 13px 0 17px; }
+.command-reference { position: relative; min-width: 0; padding: 12px 10px 11px 12px; border: 0; border-bottom: 1px dashed rgba(147,157,141,.48); border-radius: 2px; background: rgba(255,255,255,.34); transition: background .16s, transform .16s; }
+.command-reference:hover { transform: translateX(2px); background: rgba(230,239,226,.72); }
+.command-reference b { color: #30494b; font: 700 12px var(--mono); }
+.command-reference b::before { margin-right: 5px; color: #6c9a85; content: '›'; font-size: 15px; }
+.command-reference p { margin: 4px 0 8px; color: #74817c; font-size: 10px; line-height: 1.4; }
+.command-reference code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; padding: 5px 7px; border: 1px solid rgba(205,216,198,.55); border-radius: 5px; background: rgba(231,239,229,.9); color: #3d6963; font: 10px var(--mono); }
+.guide-footer { padding: 12px 0 0; border-top: 1px dashed #d9d4c5; color: #828a7f; font-size: 10px; line-height: 1.5; }
+.confirm-modal { width: min(390px, 100%); border: 1px solid #e2e9e4; border-radius: 15px; padding: 25px; background: #fbfaf7; box-shadow: 0 20px 55px rgba(8,25,30,.4); text-align: center; }
+.reset-icon { display: grid; width: 44px; height: 44px; place-items: center; margin: 0 auto 12px; border-radius: 13px; background: #f5ebe4; color: #a86650; }
+.confirm-modal h2 { margin: 0; color: #283e40; font-size: 19px; }
+.confirm-modal p { color: #788581; font-size: 12px; line-height: 1.55; }
+.confirm-modal > div:last-child { display: flex; justify-content: center; gap: 17px; margin-top: 18px; }
+.danger-button { padding: 10px 13px; border: 0; border-radius: 8px; background: #a45c4e; color: #fff; cursor: pointer; font-size: 11px; font-weight: 750; }
+.danger-button:hover { background: #88483f; }
+@keyframes guide-backdrop-in { from { opacity:0; } to { opacity:1; } }
+@keyframes guide-backdrop-out { to { opacity:0; } }
+@keyframes guide-page-in { from { opacity:0; transform:translate3d(0,30px,0) scale(.985); } to { opacity:1; transform:translate3d(0,0,0) scale(1); } }
+@keyframes guide-paper-crumple {
+  0% { opacity:1; filter:brightness(1); transform:perspective(1000px) translate3d(0,0,0) rotateX(0) rotateY(0) rotateZ(0) scale(1); }
+  14% { opacity:1; filter:brightness(1.02) contrast(1.02); transform:perspective(1000px) translate3d(-2px,1px,0) rotateX(-5deg) rotateY(7deg) rotateZ(-1deg) skewX(-1deg) scale(.94,.96); }
+  30% { opacity:1; filter:brightness(1.025) contrast(1.04); transform:perspective(1000px) translate3d(3px,5px,0) rotateX(12deg) rotateY(-14deg) rotateZ(4deg) skewX(2deg) scale(.72,.79); }
+  46% { opacity:.96; filter:brightness(1.02) contrast(1.07); transform:perspective(1000px) translate3d(-2px,12px,0) rotateX(-18deg) rotateY(22deg) rotateZ(-8deg) skewX(-3deg) scale(.42,.53); }
+  59% { opacity:.82; filter:brightness(1) contrast(1.1); transform:perspective(1000px) translate3d(2px,20px,0) rotateX(25deg) rotateY(-31deg) rotateZ(12deg) skewX(2deg) scale(.17,.27); }
+  68% { opacity:.12; filter:brightness(.99) contrast(1.08); transform:perspective(1000px) translate3d(0,24px,0) rotateX(-31deg) rotateY(36deg) rotateZ(-16deg) skewX(-2deg) scale(.035,.07); }
+  74%,100% { opacity:0; filter:brightness(.96); transform:perspective(1000px) translate3d(0,25px,0) rotateX(-31deg) rotateY(36deg) rotateZ(-16deg) scale(.02,.04); }
+}
+@keyframes guide-paper-wrinkle { 0%,18% { opacity:0; } 34% { opacity:.25; } 48% { opacity:.65; } 58% { opacity:.82; } 68% { opacity:.35; } 76%,100% { opacity:0; } }
+@keyframes crumpled-paper-emerge {
+  0%,56% { opacity:0; transform:translate(-50%,-50%) scale(.08) rotate(-10deg); }
+  67% { opacity:.92; transform:translate(-50%,-50%) scale(.84) rotate(5deg); }
+  75% { opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0); }
+  84% { opacity:.82; transform:translate(-50%,-50%) scale(.96) rotate(2deg); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(.72) rotate(11deg); }
+}
+@media(prefers-reduced-motion:reduce) { .guide-backdrop,.guide-backdrop.is-closing,.guide-modal,.guide-modal.is-closing,.guide-modal.is-closing::after,.crumple-ball { animation:none; } }
+@media (max-width: 700px) { .modal-backdrop { padding: 12px; }.guide-modal { max-height: 91vh; padding: 22px 18px 18px 52px; border-radius: 13px; background-image: radial-gradient(circle at 11px 12px, #c9bea7 0 2px, #f2ead8 2.5px 4px, transparent 4.5px), linear-gradient(90deg, transparent 0 39px, rgba(201,126,112,.32) 39px 40px, transparent 40px), repeating-linear-gradient(to bottom, transparent 0 31px, rgba(104,145,157,.105) 31px 32px); background-position: 0 12px, 0 0, 0 0; background-size: 24px 38px, 100% 100%, 100% 32px; }.guide-head { margin: -22px -18px 0 -8px; padding: 22px 18px 13px 8px; }.guide-head h2 { font-size: 21px; }.guide-head p { max-width: 240px; font-size: 11px; }.guide-scroll { margin-right: 5px; padding-right: 5px; }.command-grid { grid-template-columns: 1fr; gap: 3px; margin-top: 11px; }.command-reference { padding: 10px 7px; } }

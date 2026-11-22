@@ -1,0 +1,8 @@
+.penguin-toy-area { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+.penguin-toy { position: absolute; top: 50%; left: 76%; display: grid; width: 90px; height: 90px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: grab; pointer-events: auto; touch-action: none; user-select: none; will-change: transform; }
+.penguin-toy img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; -webkit-user-drag: none; filter: drop-shadow(0 0 15px rgba(164,220,190,.35)); transition: transform .18s ease, filter .18s ease; }
+.penguin-toy:hover img { transform: scale(1.06); filter: drop-shadow(0 0 20px rgba(164,220,190,.65)); }
+.penguin-toy:active img { transform: scale(.96); }
+.penguin-toy:focus-visible { outline: 3px solid #c6e2d1; outline-offset: 3px; }
+.penguin-toy.is-dragging { z-index: 3; cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .penguin-toy img { transition: none; } }

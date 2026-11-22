@@ -1,0 +1,15 @@
+{
+  "short_name": "LinuxLab",
+  "name": "Linux Simulation",
+  "icons": [
+    {
+      "src": "logo-page.png",
+      "sizes": "1280x1280",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#15384d",
+  "background_color": "#f6efe7"
+}

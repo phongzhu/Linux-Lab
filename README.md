@@ -1,70 +1,49 @@
-# Getting Started with Create React App
+﻿# Linux Simulation
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A beginner friendly Linux command simulator with a React frontend and an Express API. Terminal commands run against a virtual filesystem and fictional training services; they never execute on the host computer.
 
-## Available Scripts
+## Install and run
 
-In the project directory, you can run:
+```sh
+npm --prefix frontend install
+npm --prefix backend install
+npm start
+```
 
-### `npm start`
+In a second terminal, start the API:
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+```sh
+npm run dev:backend
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+The root `npm start` command delegates to the React app in `frontend/`. Its development proxy forwards `/api` requests to `http://localhost:4000` so the browser session cookie works across the API calls.
 
-### `npm test`
+## Supabase configuration
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+The existing root `.env.local` was moved to `frontend/.env.local`, where Create React App reads it. The backend also loads that same file in addition to `backend/.env`, supporting both the existing `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_PUBLISHABLE_KEY` names and the backend's `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` names. Environment files are ignored by Git. Do not use a service-role or secret key in the browser.
 
-### `npm run build`
+Apply the existing SQL migration in `supabase/migrations/` to the configured Supabase project. This is the one authoritative schema migration location and includes the saved progress, attempts, activity, and lesson catalog tables with row-level security.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Email signup uses a six-digit confirmation code. In Supabase, keep email confirmation enabled, set the email OTP length to 6, and update Authentication > Email Templates > Confirm signup with the subject in `supabase/templates/confirm-signup-subject.txt` and the HTML in `supabase/templates/confirm-signup.html`. Custom SMTP must be configured for Supabase Auth to deliver the message to users.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+For Gmail SMTP, use `smtp.gmail.com` on port `465`, with the same Gmail address for the sender and SMTP username. The SMTP password must be a Google App Password, created after enabling 2-Step Verification. Disable the Supabase Send Email Auth Hook if switching from a Resend API integration to SMTP; an enabled hook takes over email delivery. Keep SMTP credentials out of the repository.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+For a fresh project, also run `backend/database/seeds/001_training_lessons.sql` after the schema migration to populate the 15 lesson records. The seed file is generated from the curriculum and is data only; it is not another schema migration.
 
-### `npm run eject`
+## Project structure
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+- `frontend/src/components`, `pages`, `hooks`, `services`, `context`, and `styles` contain React UI, page-level CSS, frontend state behavior, and API calls.
+- `frontend/public` contains the React app's static files.
+- `backend/src/config`, `routes`, `controllers`, `services`, `middleware`, and `simulation` contain the Express API and server-side simulation.
+- Backend services own Supabase queries and business logic; controllers only handle HTTP request/response mapping.
+- `supabase/migrations/` owns Supabase schema changes. `backend/database/seeds/` contains lesson seed SQL and its generator, while `backend/database/` also stores the runtime SQLite session file.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+The root `src/` folder has been removed: the React source now lives under `frontend/src/`. `backend/src/` is the Express source tree.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Verify
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+```sh
+npm run build
+npm test
+npm run test:backend
+```

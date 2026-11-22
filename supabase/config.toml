@@ -1,0 +1,5 @@
+project_id = "ndifvftzjzpheceoayie"
+
+[db.seed]
+enabled = true
+sql_paths = ["../backend/database/seeds/001_training_lessons.sql"]
