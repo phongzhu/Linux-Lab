@@ -28,7 +28,10 @@ if (env.databaseUrl) {
     max: 2,
     connectionTimeoutMillis: 8000,
     idleTimeoutMillis: 10000,
-    ssl: true,
+    // Supabase's pooler can present a certificate chain that Node's
+    // serverless runtime does not trust. Keep TLS encryption enabled while
+    // matching PostgreSQL's `sslmode=require` behavior.
+    ssl: { rejectUnauthorized: false },
   });
   sessionStore = new PostgresStore({
     pool: sessionPool,
