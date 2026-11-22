@@ -213,8 +213,8 @@ test('preserves the fifteen foundation lessons and defines 45 structured applied
       assert.match(objective.hints[2], /^Example:/);
     });
     const expectedReady = ['applied-linux-A01','applied-linux-A02','applied-linux-A03'].includes(item.unitId)
-      || ['applied-linux-a04-l1','applied-linux-a04-l2'].includes(item.id)
-      || ['applied-linux-A05','applied-linux-A06','applied-linux-A07','applied-linux-A08','applied-linux-A09','applied-linux-A10','sre-operations-B01','sre-operations-B02'].includes(item.unitId);
+      || ['applied-linux-a04-l1','applied-linux-a04-l2','applied-linux-a04-l3'].includes(item.id)
+      || ['applied-linux-A05','applied-linux-A06','applied-linux-A07','applied-linux-A08','applied-linux-A09','applied-linux-A10','sre-operations-B01','sre-operations-B02','sre-operations-B03','sre-operations-B04','sre-operations-B05'].includes(item.unitId);
     assert.equal(item.implementationStatus, expectedReady ? 'ready' : 'preview');
   }
   const worked = lessons.find((item) => item.id === 'applied-linux-a09-l3');
@@ -336,6 +336,154 @@ test('B02 alarm state, notification deduplication, timeline, report, and CSV der
   assert.equal(validateTask(third.definition.objectives[2], third.env, 'incident export-csv', csv), false);
   const handover = run(third.env, 'incident submit-handover note=' + encodeURIComponent('Keep the 3-hour reporting cadence. Serious incidents are escalated immediately, not after the report interval. Recovery is not verified.'));
   assert.equal(validateTask(third.definition.objectives[2], third.env, 'incident submit-handover', handover), true);
+});
+
+test('B03 traces, route ordering, and proxy verification derive from attempt evidence', () => {
+  const start = (lessonId) => {
+    const definition = lessons.find((item) => item.id === lessonId);
+    return { definition, env: initialAttemptState({ id: lessonId, starting_environment: createEnvironment() }) };
+  };
+  const run = (env, command) => executeCommand(env, command);
+
+  const trace = start('sre-operations-b03-l1');
+  const events = run(trace.env, 'trace inspect REQ-7F21');
+  assert.match(events.stdout, /Kiosk UI/);
+  assert.match(events.stdout, /QR Service/);
+  assert.match(events.stdout, /No settlement or cash-in completion event/);
+  assert.equal(validateTask(trace.definition.objectives[0], trace.env, 'trace inspect REQ-7F21', events), true);
+  assert.equal(validateTask(trace.definition.objectives[1], trace.env, 'trace inspect REQ-7F21', events), true);
+  const traceNote = run(trace.env, 'trace explain note=' + encodeURIComponent('Kiosk UI called API Core, which called QR Service and returned a QR. Settlement is missing and not observed. AFOD, GW2, and ECPay are names to confirm; matching references do not confirm one server.'));
+  assert.equal(validateTask(trace.definition.objectives[2], trace.env, 'trace explain', traceNote), true);
+
+  const route = start('sre-operations-b03-l2');
+  const inspected = run(route.env, 'routing inspect');
+  assert.equal(validateTask(route.definition.objectives[0], route.env, 'routing inspect', inspected), true);
+  const broken = run(route.env, 'routing test path=/invoice/21/INV-21');
+  assert.match(broken.stdout, /selects \/invoice\/\*/);
+  run(route.env, 'routing fix-order');
+  run(route.env, 'routing test path=/invoice/1/INV-10');
+  const corrected = run(route.env, 'routing test path=/invoice/21/INV-21');
+  assert.match(corrected.stdout, /selects \/invoice\/21\/\*/);
+  assert.equal(validateTask(route.definition.objectives[1], route.env, 'routing test', corrected), true);
+  const routeNote = run(route.env, 'routing explain note=' + encodeURIComponent('The specific /invoice/21 behavior must come before the general path. The load balancer is a separate downstream layer. Forwarded header and query settings and cache behavior matter; request body values are not inspected by path matching.'));
+  assert.equal(validateTask(route.definition.objectives[2], route.env, 'routing explain', routeNote), true);
+
+  const proxy = start('sre-operations-b03-l3');
+  const initial = run(proxy.env, 'proxy inspect');
+  assert.match(initial.stdout, /hostname=api-client\.training\.test; path=\/v1\/qr/);
+  assert.match(initial.stdout, /hostname mismatch/);
+  assert.equal(validateTask(proxy.definition.objectives[0], proxy.env, 'proxy inspect', initial), true);
+  run(proxy.env, 'proxy repair training-route');
+  const restarted = run(proxy.env, 'proxy restart api-core');
+  assert.match(restarted.stdout, /HTTP 503/);
+  assert.match(restarted.stdout, /HTTP 200/);
+  const response = run(proxy.env, 'proxy test training-route');
+  assert.match(response.stdout, /response=200 QR=QR-TRAINING-7F21/);
+  assert.equal(validateTask(proxy.definition.objectives[1], proxy.env, 'proxy test training-route', response), true);
+  const explanation = run(proxy.env, 'proxy explain note=' + encodeURIComponent('Hostname differs from URL path. TLS matches the repaired hostname. Web reaches API Core through the proxy; cache and worker roles are separate. QR does not prove cash-in completion.'));
+  assert.equal(validateTask(proxy.definition.objectives[2], proxy.env, 'proxy explain', explanation), true);
+});
+
+test('B04 security findings, event parsing, and sign-in confidence use supplied records', () => {
+  const start = (lessonId) => {
+    const definition = lessons.find((item) => item.id === lessonId);
+    return { definition, env: initialAttemptState({ id: lessonId, starting_environment: createEnvironment() }) };
+  };
+  const run = (env, command) => executeCommand(env, command);
+
+  const findings = start('sre-operations-b04-l1');
+  const inspected = run(findings.env, 'security inspect-findings');
+  assert.match(inspected.stdout, /EC2/);
+  assert.match(inspected.stdout, /ECR/);
+  assert.match(inspected.stdout, /Lambda/);
+  assert.equal(validateTask(findings.definition.objectives[0], findings.env, 'security inspect-findings', inspected), true);
+  const findingsNote = run(findings.env, 'security record-findings note=' + encodeURIComponent('EC2 openssl 3.0.11-r0 HIGH 2026-11-22T08:40:00Z completed; agent heartbeat 08:39Z upgrade to 3.0.13-r0 training-platform. ECR libxml2 2.11.5-r1 MEDIUM 2026-11-22T08:42:00Z completed; image digest sha256:train17 rebuild image with 2.11.7-r0 training-containers. Lambda requests 2.31.0 LOW 2026-11-22T08:45:00Z partial; one layer not scanned update dependency to 2.32.0 and rescan training-payments. A finding is not evidence of exploitation.'));
+  assert.equal(validateTask(findings.definition.objectives[1], findings.env, 'security record-findings', findingsNote), true, JSON.stringify(findings.env.security.findings.map((item) => ({ package: item.package, installedVersion: item.installedVersion, severity: item.severity, scanTime: item.scanTime, coverage: item.coverage, suggestedFix: item.suggestedFix }))));
+  assert.equal(validateTask(findings.definition.objectives[2], findings.env, 'security record-findings', findingsNote), true);
+
+  const event = start('sre-operations-b04-l2');
+  const raw = run(event.env, 'security inspect-event');
+  assert.match(raw.stdout, /"event_id":4625/);
+  assert.match(raw.stdout, /sshd-training/);
+  assert.equal(validateTask(event.definition.objectives[0], event.env, 'security inspect-event', raw), true);
+  const eventNote = run(event.env, 'security record-event note=' + encodeURIComponent('Decoder sshd-training and rule 5710 assign medium severity to endpoint edge-07 at 2026-11-22T09:16:22Z. The raw message and source IP are raw evidence; the rule interpretation is not raw. Collection sends it through analysis to storage and display.'));
+  assert.equal(validateTask(event.definition.objectives[1], event.env, 'security record-event', eventNote), true);
+  assert.equal(validateTask(event.definition.objectives[2], event.env, 'security record-event', eventNote), true);
+
+  const signins = start('sre-operations-b04-l3');
+  const filtered = run(signins.env, 'security filter-signins window=09:00-10:00Z');
+  assert.match(filtered.stdout, /5 sign-in events/);
+  assert.equal(validateTask(signins.definition.objectives[0], signins.env, 'security filter-signins', filtered), true);
+  const grouped = run(signins.env, 'security correlate-signins');
+  assert.match(grouped.stdout, /mrivera/);
+  assert.match(grouped.stdout, /authorized support record=true/);
+  assert.equal(validateTask(signins.definition.objectives[1], signins.env, 'security correlate-signins', grouped), true);
+  const assessment = run(signins.env, 'security report-signins note=' + encodeURIComponent('Confidence is low because the same source has both failures and an authorized support success. This is not confirmed compromise. Evidence includes endpoint and ticket context. Next step is verify the ticket and source with the service owner.'));
+  assert.equal(validateTask(signins.definition.objectives[2], signins.env, 'security report-signins', assessment), true);
+});
+
+test('B05 release layers, scale evidence, and rollout status update from attempt records', () => {
+  const start = (lessonId) => {
+    const definition = lessons.find((item) => item.id === lessonId);
+    return { definition, env: initialAttemptState({ id: lessonId, starting_environment: createEnvironment() }) };
+  };
+  const run = (env, command) => executeCommand(env, command);
+
+  const layers = start('sre-operations-b05-l1');
+  const inspected = run(layers.env, 'release inspect-layers');
+  assert.match(inspected.stdout, /ami-train-2026\.11/);
+  assert.match(inspected.stdout, /task-17/);
+  assert.equal(validateTask(layers.definition.objectives[0], layers.env, 'release inspect-layers', inspected), true);
+  const published = run(layers.env, 'release publish image=linuxlab/api:1.9');
+  assert.match(published.stdout, /Running tasks are unchanged/);
+  run(layers.env, 'release update-task-definition');
+  assert.equal(validateTask(layers.definition.objectives[1], layers.env, 'release update-task-definition', { exitCode: 0 }), true);
+  const layerNote = run(layers.env, 'release explain-layers note=' + encodeURIComponent('AMI and launch template control host launch configuration, while task definition points to the container image. A new launch can use changed configuration; existing running tasks remain unchanged until replaced.'));
+  assert.equal(validateTask(layers.definition.objectives[2], layers.env, 'release explain-layers', layerNote), true);
+
+  const scaling = start('sre-operations-b05-l2');
+  const setup = run(scaling.env, 'scale inspect');
+  assert.match(setup.stdout, /desired=4 running=3/);
+  assert.match(setup.stdout, /120 requests\/minute/);
+  assert.equal(validateTask(scaling.definition.objectives[0], scaling.env, 'scale inspect', setup), true);
+  const comparison = run(scaling.env, 'scale compare');
+  assert.match(comparison.stdout, /Sent 6/);
+  assert.match(comparison.stdout, /Gateway arrived 5/);
+  assert.match(comparison.stdout, /Successful 3/);
+  assert.equal(validateTask(scaling.definition.objectives[1], scaling.env, 'scale compare', comparison), true);
+  const capacityNote = run(scaling.env, 'scale explain note=' + encodeURIComponent('Task capacity does not raise the partner rate ceiling or prove end-to-end success. This is separate from Kubernetes: Pods run on nodes and replicas describe desired workload count, not ECS tasks.'));
+  assert.equal(validateTask(scaling.definition.objectives[2], scaling.env, 'scale explain', capacityNote), true);
+
+  const rollout = start('sre-operations-b05-l3');
+  const release = run(rollout.env, 'rollout inspect');
+  assert.match(release.stdout, /task-17 running=linuxlab\/api:2\.1/);
+  assert.match(release.stdout, /EventBridge rule training-release-watch/);
+  assert.equal(validateTask(rollout.definition.objectives[0], rollout.env, 'rollout inspect', release), true);
+  const verified = run(rollout.env, 'rollout verify');
+  assert.match(verified.stdout, /stale running tasks=task-17/);
+  assert.match(verified.stdout, /non-200 health responses=1/);
+  assert.equal(validateTask(rollout.definition.objectives[1], rollout.env, 'rollout verify', verified), true);
+  const handover = run(rollout.env, 'rollout handover note=' + encodeURIComponent('Verified registry and task definition are api:2.2, but task-17 remains stale. Health is mixed; the log and metric show remaining errors. The EventBridge trigger is the training-release-watch rule. Remaining work is replace task-17 and recheck health.'));
+  assert.equal(validateTask(rollout.definition.objectives[2], rollout.env, 'rollout handover', handover), true);
+});
+
+test('A04 HTTPS and allowlisting lesson verifies certificate and preserves proxy uncertainty', () => {
+  const definition = lessons.find((item) => item.id === 'applied-linux-a04-l3');
+  const env = initialAttemptState({ id: definition.id, starting_environment: createEnvironment() });
+  const certificate = executeCommand(env, 'openssl s_client -connect api.training.test:443 -servername api.training.test');
+  assert.match(certificate.stdout, /TLS terminates at training edge proxy/);
+  assert.match(certificate.stdout, /verification=OK/);
+  assert.equal(validateTask(definition.objectives[0], env, 'openssl s_client -connect api.training.test:443 -servername api.training.test', certificate), true);
+  const event = executeCommand(env, 'waf inspect');
+  assert.match(event.stdout, /observed source=10\.24\.8\.12/);
+  assert.match(event.stdout, /forwarded-for=198\.51\.100\.24/);
+  assert.match(event.stdout, /Proxy handling.*unconfirmed/);
+  assert.equal(validateTask(definition.objectives[1], env, 'waf inspect', event), true);
+  const noteText = 'The certificate hostname api.training.test is valid and TLS terminates at the edge proxy. WAF observed 10.24.8.12 with X-Forwarded-For 198.51.100.24 while allowlist is 198.51.100.0/24. Proxy handling is not confirmed; we need confirmation which source IP the allowlist uses.';
+  const report = executeCommand(env, `echo "${noteText}"`);
+  assert.equal(validateTask(definition.objectives[2], env, `echo "${noteText}"`, report), true);
+  const unsupported = executeCommand(env, 'echo "X-Forwarded-For is definitely trusted"');
+  assert.equal(validateTask(definition.objectives[2], env, 'echo "X-Forwarded-For is definitely trusted"', unsupported), false);
 });
 
 test('A06 psql session mutates an isolated database and filters its own records', () => {

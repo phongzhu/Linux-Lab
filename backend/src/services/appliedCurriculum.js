@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { validateMonitoringTask } from '../simulation/monitoring.js';
 import { validateIncidentTask } from '../simulation/incident.js';
+import { validateRequestLabTask } from '../simulation/requestTracing.js';
+import { validateSecurityTask } from '../simulation/security.js';
+import { validateDeploymentTask } from '../simulation/deployment.js';
 
 const sectionId = 'applied-linux-sre';
 const foundations = ['u1l1', 'u1l2', 'u1l3'];
@@ -126,6 +129,22 @@ function taskHints(title, tool, taskIndex, scenarioText = '') {
     'historical baseline panel': 'WEB-1 · 90d · Average · 15d buckets',
     'buffer calculator': '42% + 5 percentage points vs 5% relative',
     'report editor': 'note gaps, sample resolution, and both buffer meanings',
+    'alarm evaluator': 'open the alarm panel, inspect its rule, then evaluate the visible datapoints',
+    'notification timeline': 'open the composite alarm and service evidence, then group the notices by incident ID',
+    'incident report editor': 'build the UTC evidence timeline, fill every required field, and save the report',
+    'CSV export': 'save the report first, export it, then add a handover note with cadence and uncertainty',
+    'findings dashboard': 'inspect EC2, ECR, and Lambda records; compare scan time, coverage, and suggested fixes',
+    'event viewer': 'open the raw edge-07 event, then compare the extracted fields',
+    'decoder/rule panel': 'trace the raw event through decoder, rule, collection, and storage',
+    'sign-in filter': 'set the supplied window to 09:00–10:00 UTC',
+    'sign-in grouping': 'group by user, source address, and endpoint before assessing intent',
+    'deployment records': 'compare the AMI, launch template, registry image, task definition, and running tasks',
+    'ECS task panel': 'record desired and running counts plus the stated request rate ceiling',
+    'request dataset': 'compare the prepared sent, gateway, and response ID arrays',
+    'Kubernetes comparison': 'keep ECS tasks distinct from Pods, nodes, and replicas',
+    'rollout report': 'compare registry and definition to every running version, health response, log, and metric',
+    openssl: 'openssl s_client -connect api.training.test:443 -servername api.training.test',
+    waf: 'waf inspect',
   };
   return [
     `For “${title.toLowerCase()},” identify the source, time window, and result you need to observe before changing anything.`,
@@ -146,6 +165,11 @@ const hintTools = {
   A09: [['docker','docker','docker'],['ddev','ddev','cat'],['ss','curl','echo']],
   A10: [['lpinfo','lpadmin','lpstat'],['cat','lp','lpstat'],['lpstat','cancel','lp']],
   B01: [['scope selector','dashboard tabs','metric inspector'],['comparison controls','rate calculator','analysis editor'],['historical baseline panel','buffer calculator','report editor']],
+  B02: [['alarm evaluator','alarm evaluator','alarm evaluator'],['notification timeline','notification timeline','notification timeline'],['UTC timeline','incident report editor','CSV export']],
+  B03: [['trace viewer','trace viewer','trace viewer'],['routing dashboard','routing dashboard','routing dashboard'],['DNS/TLS evidence','proxy test','curl']],
+  B04: [['findings dashboard','findings dashboard','findings dashboard'],['event viewer','decoder/rule panel','decoder/rule panel'],['sign-in filter','sign-in grouping','report editor']],
+  B05: [['deployment records','deployment records','deployment records'],['ECS task panel','request dataset','Kubernetes comparison'],['rollout report','rollout report','rollout report']],
+  A04: [['getent','ip','echo'],['ss','cat','echo'],['openssl','waf','echo']],
 };
 
 function monitoringScenarioState() {
@@ -253,6 +277,118 @@ function scenarioState(unit, lessonIndex) {
       handoverNote: '',
     },
   };
+  if (unit.code === 'B03') return {
+    requestLab: {
+      trace: { events: [
+        { time: '2026-11-22T10:01:00Z', correlationId: 'REQ-7F21', service: 'Kiosk UI', kind: 'outbound request', detail: 'POST /qr/issue to API Core; reference GW2-8841' },
+        { time: '2026-11-22T10:01:02Z', correlationId: 'REQ-7F21', service: 'API Core', kind: 'outbound call', detail: 'GET /v1/qr on ECS QR service; AFOD route tag present' },
+        { time: '2026-11-22T10:01:03Z', correlationId: 'REQ-7F21', service: 'QR Service', kind: 'response', detail: 'HTTP 200; QR payload returned; ECPay reference GW2-8841' },
+      ], missingStage: 'No settlement or cash-in completion event in this trace' },
+      traceInspected: false,
+      traceNote: '',
+      routing: {
+        behaviors: [
+          { pattern: '/invoice/*', origin: 'invoice-general.training.test', forwardHeaders: ['Host'], forwardQuery: false, cachePolicy: 'cache-invoice-5m' },
+          { pattern: '/invoice/1/*', origin: 'invoice-client-1.training.test', forwardHeaders: ['Host', 'X-Client-Code'], forwardQuery: true, cachePolicy: 'no-cache' },
+          { pattern: '/invoice/21/*', origin: 'invoice-client-21.training.test', forwardHeaders: ['Host', 'X-Client-Code'], forwardQuery: true, cachePolicy: 'no-cache' },
+        ],
+        loadBalancer: 'invoice-alb.training.internal; routes by forwarded X-Client-Code header',
+        tests: {},
+      },
+      routingInspected: false,
+      routingNote: '',
+      proxy: {
+        clientUrl: 'https://api-client.training.test/v1/qr',
+        dns: { hostname: 'api-client.training.test', address: '192.0.2.44' },
+        tls: { terminator: 'Training edge proxy', names: ['api.training.test'], valid: false },
+        mapping: { host: 'api-client.training.test', port: 8443, backend: 'qr-old.training.internal' },
+        backend: { name: 'QR simulator', status: 200, qrResponse: 'QR-TRAINING-7F21', cashInCompletion: 'not present in simulator response' },
+        restartCount: 0,
+        restartTimeline: [],
+      },
+      proxyInspected: false,
+      proxyNote: '',
+      lastTest: null,
+    },
+  };
+  if (unit.code === 'B04') return {
+    security: {
+      findings: [
+        { id: 'FND-EC2-41', resourceType: 'EC2', resource: 'i-0train41', package: 'openssl', installedVersion: '3.0.11-r0', severity: 'HIGH', scanTime: '2026-11-22T08:40:00Z', coverage: 'completed; agent heartbeat 08:39Z', suggestedFix: 'upgrade to 3.0.13-r0', owner: 'training-platform' },
+        { id: 'FND-ECR-17', resourceType: 'ECR', resource: 'linuxlab/api:1.8', package: 'libxml2', installedVersion: '2.11.5-r1', severity: 'MEDIUM', scanTime: '2026-11-22T08:42:00Z', coverage: 'completed; image digest sha256:train17', suggestedFix: 'rebuild image with 2.11.7-r0', owner: 'training-containers' },
+        { id: 'FND-LAMBDA-09', resourceType: 'Lambda', resource: 'training-receipt-worker', package: 'requests', installedVersion: '2.31.0', severity: 'LOW', scanTime: '2026-11-22T08:45:00Z', coverage: 'partial; one layer not scanned', suggestedFix: 'update dependency to 2.32.0 and rescan', owner: 'training-payments' },
+      ],
+      findingsInspected: false,
+      findingsNote: '',
+      event: {
+        raw: { timestamp: '2026-11-22T09:16:22Z', agent: 'edge-07', event_id: 4625, srcip: '198.51.100.24', user: 'mrivera', message: 'authentication failure for invalid user mrivera from 198.51.100.24' },
+        extracted: { sourceIp: '198.51.100.24', username: 'mrivera', eventId: 4625, authenticationResult: 'failure' },
+        decoder: 'sshd-training',
+        rule: { id: '5710', severity: 'medium', description: 'multiple authentication failures from source' },
+        endpoint: 'edge-07',
+        time: '2026-11-22T09:16:22Z',
+        flow: ['collection agent', 'analysis engine', 'event index', 'dashboard display'],
+      },
+      eventInspected: false,
+      eventNote: '',
+      signIns: [
+        { time: '2026-11-22T09:10:03Z', user: 'mrivera', source: '198.51.100.24', endpoint: 'edge-07', result: 'failure', context: 'password rejected', authorizedSupport: false },
+        { time: '2026-11-22T09:12:08Z', user: 'mrivera', source: '198.51.100.24', endpoint: 'edge-07', result: 'failure', context: 'password rejected', authorizedSupport: false },
+        { time: '2026-11-22T09:16:22Z', user: 'mrivera', source: '198.51.100.24', endpoint: 'edge-07', result: 'failure', context: 'rule 5710', authorizedSupport: false },
+        { time: '2026-11-22T09:31:17Z', user: 'mrivera', source: '198.51.100.24', endpoint: 'edge-07', result: 'success', context: 'authorized support ticket HD-2291', authorizedSupport: true },
+        { time: '2026-11-22T09:44:02Z', user: 'svc-reports', source: '10.20.4.18', endpoint: 'worker-02', result: 'success', context: 'scheduled service login', authorizedSupport: true },
+        { time: '2026-11-22T10:07:00Z', user: 'mrivera', source: '198.51.100.24', endpoint: 'edge-07', result: 'failure', context: 'outside requested window', authorizedSupport: false },
+      ],
+      signInWindow: null,
+      filteredSignins: null,
+      signInGroups: null,
+      signInNote: '',
+    },
+  };
+  if (unit.code === 'B05') return {
+    deployment: {
+      ami: { id: 'ami-train-2026.11', configRevision: 'bootstrap-r8' },
+      registry: { image: 'linuxlab/api:1.8', digest: 'sha256:train-18' },
+      launchTemplate: { id: 'lt-training-22', amiId: 'ami-train-2026.11', configRevision: 'bootstrap-r8' },
+      taskDefinition: { image: 'linuxlab/api:1.8', revision: 42, configRevision: 'api-config-r12' },
+      runningTasks: [
+        { id: 'task-16', image: 'linuxlab/api:1.8', configRevision: 'api-config-r12', status: 'running' },
+        { id: 'task-17', image: 'linuxlab/api:1.8', configRevision: 'api-config-r12', status: 'running' },
+      ],
+      layersInspected: false,
+      published: false,
+      layerNote: '',
+      scaling: {
+        cluster: 'training-east-1', taskFamily: 'api-sim', desired: 4, running: 3,
+        partnerRateCeiling: 120,
+        namingConvention: 'REQ-TYYMMDD-NN; IDs are a fictional prepared test batch',
+        requests: {
+          sent: ['REQ-T261122-01','REQ-T261122-02','REQ-T261122-03','REQ-T261122-04','REQ-T261122-05','REQ-T261122-06'],
+          gateway: ['REQ-T261122-01','REQ-T261122-02','REQ-T261122-03','REQ-T261122-05','REQ-T261122-06'],
+          responses: [
+            { id: 'REQ-T261122-01', status: 200 }, { id: 'REQ-T261122-02', status: 200 },
+            { id: 'REQ-T261122-03', status: 429 }, { id: 'REQ-T261122-05', status: 200 },
+          ],
+        },
+        inspected: false, comparison: null, note: '',
+      },
+      rollout: {
+        registryImage: 'linuxlab/api:2.2', taskDefinitionImage: 'linuxlab/api:2.2', taskDefinitionRevision: 61,
+        runningVersions: [
+          { id: 'task-16', image: 'linuxlab/api:2.2', health: 'healthy' },
+          { id: 'task-17', image: 'linuxlab/api:2.1', health: 'degraded' },
+        ],
+        healthResponses: [
+          { time: '2026-11-22T11:01:00Z', path: '/health', status: 200 },
+          { time: '2026-11-22T11:03:00Z', path: '/health', status: 502 },
+        ],
+        log: '2026-11-22T11:02:47Z ERROR task-17 upstream timeout after image 2.1',
+        metric: '5xx rate 4.8% (training threshold 1.0%)',
+        script: { path: '/opt/training/reconcile-release.sh', trigger: 'EventBridge rule training-release-watch on image-push event', lastEvent: '2026-11-22T10:58:00Z image-push api:2.2' },
+        inspected: false, verification: null, handover: '',
+      },
+    },
+  };
   if (unit.code === 'A01') {
     const port = lessonIndex === 2 ? 8081 : 8080;
     return {
@@ -304,6 +440,17 @@ function scenarioState(unit, lessonIndex) {
       routes: [{ destination: 'default', via: '10.24.1.1', device: 'eth0' }],
       dns: { 'api.training.test': '10.24.1.30' },
     };
+    if (lessonIndex === 2) Object.assign(network, {
+      tls: {
+        terminator: 'training edge proxy',
+        certificate: { subject: 'CN=api.training.test', names: ['api.training.test'], notBefore: '2026-10-01T00:00:00Z', notAfter: '2027-10-01T00:00:00Z', valid: true, protocol: 'TLSv1.3' },
+      },
+      waf: {
+        id: 'WAF-TRAIN-8821', time: '2026-11-22T10:22:18Z', sourceAddress: '10.24.8.12',
+        forwardedFor: '198.51.100.24', allowlist: '198.51.100.0/24', proxy: 'edge-proxy-02 (10.24.8.12)',
+        forwardedHeaderTrust: 'not confirmed by supplied configuration',
+      },
+    });
     if (lessonIndex === 1) Object.assign(network, {
       listeners: [
         { address: '0.0.0.0', port: 443, process: 'legacy-site' },
@@ -400,6 +547,9 @@ function validateAppliedTask(unitCode, lessonIndex, taskIndex, env, command, std
   if (!result) return false;
   if (unitCode === 'B01') return validateMonitoringTask(lessonIndex, taskIndex, env, result);
   if (unitCode === 'B02') return validateIncidentTask(lessonIndex, taskIndex, env, result);
+  if (unitCode === 'B03') return validateRequestLabTask(lessonIndex, taskIndex, env, result);
+  if (unitCode === 'B04') return validateSecurityTask(lessonIndex, taskIndex, env, result);
+  if (unitCode === 'B05') return validateDeploymentTask(lessonIndex, taskIndex, env, result);
   if (unitCode === 'A01' && lessonIndex === 0) {
     if (taskIndex === 0) return /^\s*(?:ls|find)\b/.test(command) && /config\.json/.test(stdout);
     if (taskIndex === 1) return ['/opt/training-api/config.json','/opt/training-api/README.txt'].every((path) => env.evidence?.includes(path));
@@ -465,6 +615,15 @@ function validateAppliedTask(unitCode, lessonIndex, taskIndex, env, command, std
     const checks = env.network?.endpointChecks || [];
     return /^\s*echo\b/.test(command) && checks.some((check) => check.port === 443 && check.status === 404)
       && checks.some((check) => check.port === 8443 && check.status === 200) && stdout.includes('8443') && stdout.includes('404') && stdout.includes('200');
+  }
+  if (unitCode === 'A04' && lessonIndex === 2) {
+    if (taskIndex === 0) return /^\s*openssl\s+s_client\s+-connect\s+api\.training\.test:443\s+-servername\s+api\.training\.test\s*$/.test(command)
+      && env.evidence?.includes('tls:certificate') && env.evidence?.includes('tls:termination') && /subjectAltName=api\.training\.test/.test(stdout) && /verification=OK/.test(stdout);
+    if (taskIndex === 1) return /^\s*waf\s+inspect\s*$/.test(command) && env.evidence?.includes('waf:event')
+      && stdout.includes('10.24.8.12') && stdout.includes('198.51.100.24') && /not confirmed/.test(stdout);
+    return /^\s*echo\b/.test(command) && /10\.24\.8\.12/.test(stdout) && /198\.51\.100\.24/.test(stdout)
+      && /allowlist/.test(stdout) && /proxy/.test(stdout) && /not confirmed|needs confirmation|unconfirmed/.test(stdout)
+      && /which.*ip|which address|source.*used/i.test(stdout);
   }
   if (unitCode === 'A05' && lessonIndex === 0) {
     if (taskIndex === 0) return /^\s*systemctl\s+status\s+training-site\s*$/.test(command)
@@ -630,7 +789,7 @@ export const appliedLessons = unitDefinitions.flatMap((unit) => unit.scenarios.m
   explanation: [unit.explanations[index]],
   recap: [unit.explanations[index]],
   startingState: scenarioState(unit, index),
-  implementationStatus: ['A01','A02','A03','A05','A06','A07','A08','A09','A10','B01','B02'].includes(unit.code) || (unit.code === 'A04' && index < 2) ? 'ready' : 'preview',
+  implementationStatus: ['A01','A02','A03','A04','A05','A06','A07','A08','A09','A10','B01','B02','B03','B04','B05'].includes(unit.code) ? 'ready' : 'preview',
 })));
 
 export const appliedTracks = [

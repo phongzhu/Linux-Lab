@@ -40,6 +40,18 @@ For a fresh project, also run `backend/database/seeds/001_training_lessons.sql` 
 
 The root `src/` folder has been removed: the React source now lives under `frontend/src/`. `backend/src/` is the Express source tree.
 
+## Applied curriculum implementation
+
+The original 15 Linux Fundamentals lessons remain unchanged. The applied track currently has scenario-backed implementations for A01–A03, A05–A10 and B01–B05. A04 lessons 1–2 are also implemented; A04 lesson 3 remains explicitly marked as a preview workspace until its simulator behavior and validation are implemented. Preview status no longer locks learners out: every lesson can be opened, and its status tells learners whether its scenario is implemented.
+
+B01 uses attempt-scoped fictional monitoring data and a dashboard workspace. B02 uses attempt-scoped alarm datapoints, notice records, service evidence and an incident report editor. The training `incident` actions calculate alarm state from the configured datapoints and missing-data policy, group notices by incident ID, derive a sorted evidence timeline, and produce CSV from the saved report fields. None of these actions call a cloud monitoring service.
+
+B03 uses an attempt-scoped request trace, ordered route behaviors, DNS/TLS/proxy records, and a controlled restart timeline. Trace gaps remain gaps, behavior selection follows the configured order, the training repair changes only that attempt's route, and a QR response does not imply cash-in completion.
+
+B04 uses attempt-scoped vulnerability records, one raw authentication event with separately extracted decoder/rule fields, and a filtered sign-in timeline. Partial scan coverage remains visible; findings do not establish exploitation, and sign-in assessments retain confidence and follow-up rather than automatically labeling an account compromised.
+
+B05 uses attempt-scoped image/configuration layers, a prepared ECS request batch and partner rate ceiling, plus rollout, health, log, metric and event-rule records. Publishing an image does not rewrite running tasks; request counts derive from IDs in the supplied arrays; incomplete rollout adoption remains visible.
+
 ## Verify
 
 ```sh

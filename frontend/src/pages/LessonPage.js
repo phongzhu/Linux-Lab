@@ -3,6 +3,9 @@ import Icon from '../components/Icon';
 import Terminal from '../components/Terminal';
 import MonitoringWorkspace from '../components/MonitoringWorkspace';
 import IncidentWorkspace from '../components/IncidentWorkspace';
+import RequestWorkspace from '../components/RequestWorkspace';
+import SecurityWorkspace from '../components/SecurityWorkspace';
+import DeploymentWorkspace from '../components/DeploymentWorkspace';
 import './LessonPage.css';
 
 const missionBriefs = {
@@ -74,7 +77,10 @@ export default function LessonPage({ lesson, attempt, busy, requestError, onComm
   const missionBrief = missionBriefs[lesson.id] || lesson.scenario;
   const isB01Dashboard = lesson.unitId?.endsWith('B01') && lesson.workspaceType === 'monitoring-dashboard';
   const isB02Incident = lesson.unitId?.endsWith('B02') && lesson.workspaceType === 'monitoring-dashboard';
-  const isTrainingWorkspace = isB01Dashboard || isB02Incident;
+  const isB03Request = lesson.unitId?.endsWith('B03') && lesson.workspaceType === 'monitoring-dashboard';
+  const isB04Security = lesson.unitId?.endsWith('B04') && lesson.workspaceType === 'monitoring-dashboard';
+  const isB05Deployment = lesson.unitId?.endsWith('B05') && lesson.workspaceType === 'monitoring-dashboard';
+  const isTrainingWorkspace = isB01Dashboard || isB02Incident || isB03Request || isB04Security || isB05Deployment;
 
   return <main className="lesson-page page-shell">
     <div className="lesson-toolbar">
@@ -108,12 +114,18 @@ export default function LessonPage({ lesson, attempt, busy, requestError, onComm
         <div className="lesson-note"><span>✳</span> {isTrainingWorkspace ? 'Workspace actions use fictional training evidence and are saved with this attempt.' : 'Every command runs in a fictional sandbox. Explore freely; you can restart this lesson anytime.'}</div>
       </section>
       <section className="lesson-workspace" aria-label="Lesson workspace">
-        <div className="workspace-heading"><div>{isB01Dashboard ? 'TRAINING DASHBOARD · FICTIONAL DATA' : isB02Incident ? 'INCIDENT DESK · SIMULATED EVIDENCE' : <><span className="live-dot"/> YOUR WORKSPACE</>}</div><button onClick={() => { setHints(0); onRestart(); }}>Restart lesson</button></div>
+        <div className="workspace-heading"><div>{isB01Dashboard ? 'TRAINING DASHBOARD · FICTIONAL DATA' : isB02Incident ? 'INCIDENT DESK · SIMULATED EVIDENCE' : isB03Request ? 'REQUEST LAB · FICTIONAL ROUTING DATA' : isB04Security ? 'SECURITY REVIEW · TRAINING RECORDS' : isB05Deployment ? 'RELEASE DESK · SIMULATED RECORDS' : <><span className="live-dot"/> YOUR WORKSPACE</>}</div><button onClick={() => { setHints(0); onRestart(); }}>Restart lesson</button></div>
         {isB01Dashboard
           ? <MonitoringWorkspace key={attempt.id} lesson={lesson} attempt={attempt} busy={busy} requestError={requestError} onAction={onCommand}/>
           : isB02Incident
             ? <IncidentWorkspace key={attempt.id} lesson={lesson} attempt={attempt} busy={busy} requestError={requestError} onAction={onCommand}/>
-          : <Terminal key={attempt.id} attempt={attempt} busy={busy} requestError={requestError} onCommand={onCommand}/>}
+            : isB03Request
+              ? <RequestWorkspace key={attempt.id} lesson={lesson} attempt={attempt} busy={busy} requestError={requestError} onAction={onCommand}/>
+              : isB04Security
+                ? <SecurityWorkspace key={attempt.id} lesson={lesson} attempt={attempt} busy={busy} requestError={requestError} onAction={onCommand}/>
+                : isB05Deployment
+                  ? <DeploymentWorkspace key={attempt.id} lesson={lesson} attempt={attempt} busy={busy} requestError={requestError} onAction={onCommand}/>
+                  : <Terminal key={attempt.id} attempt={attempt} busy={busy} requestError={requestError} onCommand={onCommand}/>}
       </section>
     </div>
   </main>;

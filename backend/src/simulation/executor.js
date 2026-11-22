@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { executeMonitoringCommand } from './monitoring.js';
 import { executeIncidentCommand } from './incident.js';
+import { executeRequestLabCommand } from './requestTracing.js';
+import { executeSecurityCommand } from './security.js';
+import { executeDeploymentCommand } from './deployment.js';
 
 const baseFiles = {
   '/home/learner/readme.txt': { type: 'file', content: 'Welcome to your Linux training machine. Start with pwd, then explore with ls.' },
@@ -221,6 +224,18 @@ function runOne(env, tokens, input = '') {
       env.evidence = [...new Set([...(env.evidence || []), 'network:listeners'])];
       return ok(`State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n${env.network.listeners.map((item) => `LISTEN 0 128 ${item.address}:${item.port} 0.0.0.0:* users:(('${item.process}',pid=2048,fd=8))`).join('\n')}`);
     }
+    case 'openssl': {
+      if (args.join(' ') !== 's_client -connect api.training.test:443 -servername api.training.test' || !env.network?.tls) return fail('openssl: supported training form is s_client -connect HOST:443 -servername HOST');
+      const cert = env.network.tls.certificate;
+      env.evidence = [...new Set([...(env.evidence || []), 'tls:certificate', 'tls:termination'])];
+      return ok(`CONNECTED to api.training.test:443\nTLS terminates at ${env.network.tls.terminator}\nsubject=${cert.subject}\nsubjectAltName=${cert.names.join(', ')}\nnotBefore=${cert.notBefore}\nnotAfter=${cert.notAfter}\nverification=${cert.valid ? 'OK' : 'hostname mismatch'}\nProtocol=${cert.protocol}`);
+    }
+    case 'waf': {
+      if (args.length !== 1 || args[0] !== 'inspect' || !env.network?.waf) return fail('waf: supported training view is waf inspect in the HTTPS lesson');
+      const event = env.network.waf;
+      env.evidence = [...new Set([...(env.evidence || []), 'waf:event'])];
+      return ok(`Event=${event.id} time=${event.time}\nobserved source=${event.sourceAddress}\nforwarded-for=${event.forwardedFor}\nconfigured allowlist=${event.allowlist}\nproxy=${event.proxy}\nforwarded-header trust=${event.forwardedHeaderTrust}\nProxy handling and the allowlist source used in production are unconfirmed.`);
+    }
     case 'ssh': {
       if (env.remoteSession) return fail('ssh: nested remote sessions are not supported');
       if (args.length !== 1 || !args[0].includes('@')) return fail('ssh: usage: ssh USER@HOST');
@@ -254,7 +269,7 @@ function runOne(env, tokens, input = '') {
     }
     case 'uname': return ok(args.includes('-a') ? `Linux ${env.host} 6.8.0-training-generic #1-Ubuntu SMP PREEMPT_DYNAMIC x86_64 GNU/Linux` : args.includes('-r') ? '6.8.0-training-generic' : 'Linux');
     case 'date': return ok('Sat Apr 12 09:08:18 UTC 2025');
-    case 'which': { if (!args.length) return fail('which: missing command name'); const available = new Set('pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor whoami id hostname ssh exit chmod chgrp chown sudo ip getent ss uname date which tree file du man less more clear history help'.split(' ')); return ok(args.map((name) => available.has(name) ? `/usr/bin/${name}` : '').filter(Boolean).join('\n')); }
+    case 'which': { if (!args.length) return fail('which: missing command name'); const available = new Set('pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor whoami id hostname ssh exit chmod chgrp chown sudo ip getent ss openssl waf uname date which tree file du man less more clear history help'.split(' ')); return ok(args.map((name) => available.has(name) ? `/usr/bin/${name}` : '').filter(Boolean).join('\n')); }
     case 'file': { if (!args.length) return fail('file: missing operand'); return args.map((name) => { const path = resolvePath(name, env.cwd, env.user); const node = env.files[path]; return node ? `${name}: ${node.type === 'dir' ? 'directory' : /\.json$/i.test(name) ? 'JSON text data' : 'ASCII text'}` : `file: ${name}: cannot open (No such file)`; }).join('\n').includes('cannot open') ? fail(`file: cannot open '${args.find((name) => !env.files[resolvePath(name, env.cwd, env.user)])}'`) : ok(args.map((name) => { const path = resolvePath(name, env.cwd, env.user); const node = env.files[path]; return `${name}: ${node.type === 'dir' ? 'directory' : /\.json$/i.test(name) ? 'JSON text data' : 'ASCII text'}`; }).join('\n')); }
     case 'man': case 'less': case 'more': { const name = args.find((item) => !item.startsWith('-')); if (!name) return fail(`${cmd}: missing operand`); const page = env.files[resolvePath(name, env.cwd, env.user)]; if (page?.type === 'file') return ok(page.content); if (cmd === 'man' && ['pwd', 'ls', 'cd', 'cat', 'grep', 'find', 'mkdir', 'cp', 'mv', 'rm', 'touch'].includes(name)) return ok(`${name}(1) — Ubuntu training manual\n\nNAME\n    ${name} - ${({ pwd: 'print the current working directory', ls: 'list directory contents', cd: 'change the shell working directory', cat: 'concatenate and print files', grep: 'search text using a pattern', find: 'search for files and directories', mkdir: 'create directories', cp: 'copy files', mv: 'move files', rm: 'remove files or directories', touch: 'create an empty file' })[name]}\n\nThis concise manual page is part of the LinuxLab Ubuntu simulation.`); return fail(`${cmd}: no manual or file named '${name}'`); }
     case 'tree': { const base = args.find((item) => !item.startsWith('-')) || '.'; const root = resolvePath(base, env.cwd, env.user); if (env.files[root]?.type !== 'dir') return fail(`tree: '${base}': not a directory`); const lines = [base]; const descend = (dir, prefix = '') => { const entries = children(env.files, dir).filter((path) => !path.split('/').at(-1).startsWith('.')).sort(); entries.forEach((path, index) => { const last = index === entries.length - 1; lines.push(`${prefix}${last ? '└── ' : '├── '}${path.split('/').at(-1)}${env.files[path].type === 'dir' ? '/' : ''}`); if (env.files[path].type === 'dir') descend(path, `${prefix}${last ? '    ' : '│   '}`); }); }; descend(root); return ok(`${lines.join('\n')}\n${lines.length - 1} items`); }
@@ -599,6 +614,18 @@ export function executeCommand(env, raw, history = []) {
   }
   if (/^incident(?:\s|$)/.test(command)) {
     const response = executeIncidentCommand(env, command);
+    return commandResult(env, response.stdout, response.stderr, response.exitCode, cwdBefore);
+  }
+  if (/^(?:trace|routing|proxy)(?:\s|$)/.test(command)) {
+    const response = executeRequestLabCommand(env, command);
+    return commandResult(env, response.stdout, response.stderr, response.exitCode, cwdBefore);
+  }
+  if (/^security(?:\s|$)/.test(command)) {
+    const response = executeSecurityCommand(env, command);
+    return commandResult(env, response.stdout, response.stderr, response.exitCode, cwdBefore);
+  }
+  if (/^(?:release|scale|rollout)(?:\s|$)/.test(command)) {
+    const response = executeDeploymentCommand(env, command);
     return commandResult(env, response.stdout, response.stderr, response.exitCode, cwdBefore);
   }
 
