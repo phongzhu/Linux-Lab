@@ -28,7 +28,7 @@ function completeInput(value, files, cwd, user, disablePrinterCommands = false) 
   return `${prefix}${completed}`;
 }
 
-export default function Terminal({ attempt, busy, requestError, onCommand }) {
+export default function Terminal({ attempt, busy, requestError, onCommand, bootProgress = 100 }) {
   const [value, setValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(0);
   const [displayStart, setDisplayStart] = useState(0);
@@ -45,6 +45,8 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   const label = cwd === homePath ? '~' : cwd.replace(homePath, '~');
   const databaseSession = attempt.state.databaseSession;
   const interactivePrompt = attempt.state.interactivePrompt;
+  const initialSetup = Boolean(attempt.state.initialSetup);
+  const bootReady = bootProgress >= 100;
   const passwordPrompt = interactivePrompt?.kind === 'password';
   const loginScreen = Boolean(attempt.state.loginScreen);
 
@@ -57,8 +59,8 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   }, [commandList.length]);
 
   useEffect(() => {
-    if (window.matchMedia?.('(pointer: fine)').matches) inputRef.current?.focus();
-  }, []);
+    if (bootReady && window.matchMedia?.('(pointer: fine)').matches) inputRef.current?.focus();
+  }, [bootReady, passwordPrompt, commandList.length]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -108,14 +110,23 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   };
 
   return <section className="terminal-card" aria-label="Simulated terminal">
-    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><div className="terminal-actions"><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span><button className="terminal-clear" type="button" onClick={clearTerminal} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button></div></div>
+    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {initialSetup ? 'Ubuntu first start' : loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><div className="terminal-actions"><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span><button className="terminal-clear" type="button" onClick={clearTerminal} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button></div></div>
     <div className="terminal-output" ref={outputRef} onClick={() => inputRef.current?.focus()} aria-live="polite">
+      {displayStart === 0 && lastClear < 0 && initialSetup && <div className="ubuntu-login first-boot-output">
+        <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · LinuxLab virtual computer</pre>
+        <pre className="term-line notice">Starting Ubuntu...</pre>
+        <pre className="term-line notice">[  OK  ] Mounted virtual filesystem</pre>
+        <pre className="term-line notice">[  OK  ] Started system services</pre>
+        <pre className="term-line notice">Preparing first sign-in</pre>
+        <div className="boot-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={bootProgress}><span style={{ width: `${bootProgress}%` }}/><b>{bootProgress}%</b></div>
+        {bootReady && <><pre className="term-line ubuntu-welcome">Welcome to LinuxLab.</pre><pre className="term-line notice">Set an 8–128 character password for the built-in admin account to finish setup.</pre></>}
+      </div>}
       {displayStart === 0 && lastClear < 0 && loginScreen && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host} tty1</pre>
         <pre className="term-line ubuntu-login-line">LinuxLab computer is logged out.</pre>
         <pre className="term-line startup-tip">Available accounts: <b>{Object.keys(attempt.state.users || {}).join(', ')}</b></pre>
       </div>}
-      {displayStart === 0 && lastClear < 0 && !loginScreen && <div className="ubuntu-login">
+      {displayStart === 0 && lastClear < 0 && !loginScreen && !initialSetup && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host}</pre>
         <pre className="term-line ubuntu-login-line">{attempt.state.remoteSession ? `SSH session for ${user}@${host}` : `Local training session for ${user}@${host}`}</pre>
         <pre className="term-line ubuntu-welcome">Welcome to Ubuntu 24.04.2 LTS.</pre>
@@ -123,11 +134,12 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
         <pre className="term-line startup-tip">Start with <b>pwd</b> to see where you are, <b>ls</b> to look around, or type <b>help</b>.</pre>
       </div>}
       {visibleCommands.map((entry) => <div key={entry.id}>
-        <pre className="term-line command">{entry.loginInput ? <>learnbox login: {entry.command}</> : entry.passwordInput ? <>Password:</> : <><span className="prompt-user">{entry.userBefore || user}</span>@<span className="prompt-host">{entry.hostBefore || 'learnbox'}</span>:<span className="prompt-path">{(entry.cwdBefore || entry.cwd || homePath) === `/home/${entry.userBefore || user}` ? '~' : (entry.cwdBefore || entry.cwd || homePath).replace(`/home/${entry.userBefore || user}`, '~')}</span>$ {entry.command}</>}</pre>
+        <pre className="term-line command">{entry.firstBootUsername ? <>Enter new UNIX username: {entry.command}</> : entry.loginInput ? <>learnbox login: {entry.command}</> : entry.passwordInput ? <>Password:</> : <><span className="prompt-user">{entry.userBefore || user}</span>@<span className="prompt-host">{entry.hostBefore || 'learnbox'}</span>:<span className="prompt-path">{(entry.cwdBefore || entry.cwd || homePath) === `/home/${entry.userBefore || user}` ? '~' : (entry.cwdBefore || entry.cwd || homePath).replace(`/home/${entry.userBefore || user}`, '~')}</span>$ {entry.command}</>}</pre>
         {(entry.stdout ?? (entry.succeeded ? entry.output : '')) && <pre className="term-line output">{entry.stdout ?? entry.output}</pre>}
         {(entry.stderr ?? (!entry.succeeded ? entry.output : '')) && <pre className="term-line error">{entry.stderr ?? entry.output}</pre>}
       </div>)}
-      <form className="terminal-form" onSubmit={submit}><span className="prompt">{passwordPrompt ? <><b>{interactivePrompt.operation === 'sudo-adduser' ? `[sudo] password for ${interactivePrompt.username}` : interactivePrompt.operation === 'su' || interactivePrompt.operation === 'login' ? `Password for ${interactivePrompt.username}` : interactivePrompt.step === 'confirm' ? 'Retype new password' : 'New password'}:</b></> : loginScreen ? <><b>learnbox login:</b></> : databaseSession ? <><b>{databaseSession.database}</b><em>=&gt;</em></> : <><b>{user}</b>@<strong>{host}</strong>:<em>{label}</em>$</>}</span><input ref={inputRef} type={passwordPrompt ? 'password' : 'text'} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={keyDown} aria-label={passwordPrompt ? 'Password input' : loginScreen ? 'Account username' : 'Terminal command'} placeholder={passwordPrompt ? 'password input is hidden' : loginScreen ? 'enter account name' : commandList.length ? '' : databaseSession ? 'enter SQL or \\q' : 'try pwd'} autoComplete="off" spellCheck="false" disabled={busy}/><button type="submit" aria-label={passwordPrompt ? 'Submit password' : loginScreen ? 'Submit account name' : 'Run command'} disabled={busy}><Icon name="arrow" size={17}/></button></form>
+      <form className="terminal-form" style={initialSetup && !bootReady ? { visibility: 'hidden' } : undefined} onSubmit={submit}><span className="prompt">{passwordPrompt ? <><b>{interactivePrompt.operation === 'sudo-adduser' ? `Admin sign-in password for ${interactivePrompt.username}` : interactivePrompt.operation === 'su' || interactivePrompt.operation === 'login' ? `Password for ${interactivePrompt.username}` : interactivePrompt.step === 'confirm' ? 'Retype new password' : interactivePrompt.operation === 'first-admin-password' ? 'New password for admin' : 'New password'}:</b></> : initialSetup ? <><b>New password for admin:</b></> : loginScreen ? <><b>learnbox login:</b></> : databaseSession ? <><b>{databaseSession.database}</b><em>=&gt;</em></> : <><b>{user}</b>@<strong>{host}</strong>:<em>{label}</em>$</>}</span><input ref={inputRef} type={passwordPrompt || initialSetup ? 'password' : 'text'} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={keyDown} aria-label={passwordPrompt || initialSetup ? 'Password input' : loginScreen ? 'Account username' : 'Terminal command'} placeholder={passwordPrompt || initialSetup ? 'password input is hidden' : loginScreen ? 'enter account name' : commandList.length ? '' : databaseSession ? 'enter SQL or \\q' : 'try pwd'} autoComplete="off" spellCheck="false" disabled={busy || (initialSetup && !bootReady)}/><button type="submit" aria-label={passwordPrompt ? 'Submit password' : loginScreen ? 'Submit account name' : 'Run command'} disabled={busy || (initialSetup && !bootReady)}><Icon name="arrow" size={17}/></button></form>
+      {passwordPrompt && interactivePrompt.operation === 'sudo-adduser' && interactivePrompt.attempts > 0 && <div className="terminal-prompt-hint" role="alert">That admin password was not accepted. Use the same password you entered to sign in. {3 - interactivePrompt.attempts} attempt{3 - interactivePrompt.attempts === 1 ? '' : 's'} remaining.</div>}
     </div>
     <div className="terminal-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> history <kbd>Tab</kbd> complete <kbd>Ctrl</kbd>+<kbd>L</kbd> clear</span><span>{requestError ? <span className="term-error">{requestError}</span> : 'Safe Ubuntu-style shell simulation'}</span></div>
   </section>;

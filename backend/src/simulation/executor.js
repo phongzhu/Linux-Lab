@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { executeMonitoringCommand } from './monitoring.js';
 import { executeIncidentCommand } from './incident.js';
 import { executeRequestLabCommand } from './requestTracing.js';
@@ -118,12 +118,34 @@ function parent(path) { return path.slice(0, path.lastIndexOf('/')) || '/'; }
 function children(files, path) { return Object.keys(files).filter((key) => key !== path && parent(key) === path); }
 function optionSet(args) { return new Set(args.filter((arg) => /^-[a-z]+$/i.test(arg)).flatMap((arg) => arg.length > 2 ? [...arg.slice(1)].map((flag) => `-${flag}`) : [arg])); }
 function rejectOption(cmd, args, allowed) { const flags = optionSet(args); const invalid = [...flags].find((arg) => !allowed.includes(arg)); return invalid ? { output: `✖ ${cmd}: unsupported option '${invalid}'. Type help ${cmd} for examples.`, error: true } : null; }
-function hasReadPermission(env, node) {
-  if (!node || node.type !== 'file' || env.user === 'root') return true;
-  const mode = Number.parseInt(String(node.mode || '0644'), 8);
+function permissionShift(env, node) {
   const groups = env.users?.[env.user]?.groups || [];
-  const shift = env.user === node.owner ? 6 : groups.includes(node.group) ? 3 : 0;
-  return ((mode >> shift) & 0b100) !== 0;
+  return env.user === node?.owner ? 6 : groups.includes(node?.group) ? 3 : 0;
+}
+function hasPermission(env, node, bits) {
+  if (env.user === 'root') return true;
+  const mode = Number.parseInt(String(node?.mode || (node?.type === 'dir' ? '0755' : '0644')), 8);
+  return ((mode >> permissionShift(env, node)) & bits) === bits;
+}
+function canTraversePath(env, path) {
+  if (env.user === 'root') return true;
+  const parts = path.split('/').filter(Boolean);
+  let current = '';
+  for (const part of parts) {
+    current += `/${part}`;
+    const node = env.files[current];
+    if (node?.type === 'dir' && !hasPermission(env, node, 0b001)) return false;
+  }
+  return true;
+}
+function hasReadPermission(env, node, path) {
+  if (!node || node.type !== 'file' || env.user === 'root') return true;
+  return canTraversePath(env, parent(path)) && hasPermission(env, node, 0b100);
+}
+function canWriteInParent(env, path) {
+  const directory = parent(path);
+  const node = env.files[directory];
+  return node?.type === 'dir' && canTraversePath(env, directory) && hasPermission(env, node, 0b011);
 }
 function permissionString(node) {
   const mode = Number.parseInt(String(node.mode || (node.type === 'dir' ? '0755' : '0644')), 8);
@@ -147,11 +169,12 @@ function runOne(env, tokens, input = '') {
     const p = resolvePath(path, env.cwd, env.user);
     env.lastReadError = '';
     if (env.files[p]?.type !== 'file') return null;
-    if (!hasReadPermission(env, env.files[p])) { env.lastReadError = `${path}: Permission denied`; return null; }
+    if (!hasReadPermission(env, env.files[p], p)) { env.lastReadError = `${path}: Permission denied`; return null; }
     env.lastReadError = '';
     env.evidence = [...new Set([...(env.evidence || []), p])];
     return { path: p, content: env.files[p].content };
   };
+  if (env.disablePrinterCommands && ['lpinfo', 'lpadmin', 'lpstat', 'lp', 'cancel'].includes(cmd)) return fail(`${cmd}: no printer is configured on this computer`);
   switch (cmd) {
     case 'pwd': return args.length ? fail('pwd: this training shell does not support options or extra arguments') : ok(env.cwd);
     case 'whoami': if (args.length) return fail('whoami: unexpected argument'); env.evidence = [...new Set([...(env.evidence || []), `identity:${env.user}`])]; return ok(env.user);
@@ -161,10 +184,17 @@ function runOne(env, tokens, input = '') {
       if (env.users && !account) return fail(`id: '${user}': no such training user`);
       const groups = account?.groups || ['learners'];
       env.evidence = [...new Set([...(env.evidence || []), `groups:${user}`])];
-      return ok(`uid=${user === 'root' ? 0 : user === 'learner' ? 1000 : 1100}(${user}) gid=${groups[0] || 'learners'} groups=${groups.join(',')}`);
+      return ok(`uid=${account?.uid ?? (user === 'root' ? 0 : user === 'learner' ? 1000 : 1100)}(${user}) gid=${groups[0] || 'learners'} groups=${groups.join(',')}`);
     }
     case 'sudo': {
       if (!['training-admin','training administrator'].includes(env.role)) return fail('sudo: this lesson role is not authorized to use training administrator commands');
+      if (Array.isArray(env.adminUsers) && !env.adminUsers.includes(env.user)) return fail('sudo: user is not in the sudoers file. This incident will be reported.');
+      if (args[0] === 'adduser') {
+        const account = env.users?.[env.user];
+        if (!account?.passwordHash) return fail('sudo: set an administrator password first with passwd');
+        env.interactivePrompt = { kind: 'password', operation: 'sudo-adduser', username: env.user, command: args.join(' ') };
+        return ok(`[sudo] password for ${env.user}:`);
+      }
       if (args[0] !== '-u' || !args[1] || !args[2]) return fail('sudo: usage: sudo -u USER COMMAND [ARGS...]');
       const user = args[1]; if (!env.users?.[user]) return fail(`sudo: unknown training user '${user}'`);
       const previous = env.user; env.user = user;
@@ -173,6 +203,38 @@ function runOne(env, tokens, input = '') {
       env.accessChecks = { ...(env.accessChecks || {}), [user]: { path: target ? resolvePath(target, env.cwd, user) : null, allowed: !checked.error, exitCode: checked.error ? 1 : 0 } };
       env.user = previous;
       return checked;
+    }
+    case 'adduser': {
+      if (!['training-admin','training administrator'].includes(env.role)) return fail('adduser: only an administrator can create training accounts');
+      if (Array.isArray(env.adminUsers) && (!env.adminUsers.includes(env.user) || !env.sudoContext)) return fail('adduser: run this command with sudo');
+      if (args.length !== 1 || !/^[a-z_][a-z0-9_-]{0,31}$/.test(args[0])) return fail('adduser: usage: sudo adduser USERNAME (use lowercase letters, numbers, _ or -)');
+      if (env.users?.[args[0]]) return fail(`adduser: The user '${args[0]}' already exists.`);
+      env.interactivePrompt = { kind: 'password', operation: 'adduser', username: args[0], step: 'new' };
+      return ok(`Adding user '${args[0]}' ...\nEnter a new password for ${args[0]}:`);
+    }
+    case 'su': {
+      const username = args.filter((arg) => !arg.startsWith('-')).at(-1);
+      if (args.length > 2 || !username) return fail('su: usage: su - USERNAME');
+      if (!env.users?.[username]) return fail(`su: user '${username}' does not exist`);
+      if (username === env.user) return ok('');
+      env.interactivePrompt = { kind: 'password', operation: 'su', username };
+      return ok(`Password for ${username}:`);
+    }
+    case 'passwd': {
+      if (args.length) return fail('passwd: set the password for the current simulated account without command-line arguments');
+      const account = env.users?.[env.user];
+      if (!env.loggedIn || !account) return fail('passwd: no signed-in account');
+      env.interactivePrompt = { kind: 'password', operation: 'passwd', username: env.user, step: 'new' };
+      return ok(`New password for ${env.user}:`);
+    }
+    case 'logout': {
+      if (!env.loggedIn) return fail('logout: no user is currently logged in');
+      if (!env.users?.[env.user]?.passwordHash) return fail('logout: set this account password first with passwd');
+      delete env.userSession;
+      delete env.interactivePrompt;
+      env.loggedIn = false;
+      env.loginScreen = true;
+      return ok('Ubuntu 24.04.2 LTS learnbox tty1\n\nSystem logged out. Enter an account name to sign in.');
     }
     case 'chmod': {
       if (!['training-admin','training administrator','training operator'].includes(env.role)) return fail('chmod: administrator role required in this training environment');
@@ -259,6 +321,13 @@ function runOne(env, tokens, input = '') {
     }
     case 'exit': {
       if (args.length) return fail('exit: unexpected argument');
+      if (env.userSession) {
+        const previous = env.userSession;
+        env.user = previous.user; env.cwd = previous.cwd; env.oldpwd = previous.oldpwd;
+        env.role = previous.role;
+        delete env.userSession;
+        return ok(`Returned to ${env.user}`);
+      }
       if (!env.remoteSession || !env.localSession) return fail('exit: not in a remote training session');
       persistRemoteHost(env);
       const local = env.localSession;
@@ -276,8 +345,9 @@ function runOne(env, tokens, input = '') {
     case 'du': { const base = args.find((item) => !item.startsWith('-')) || '.'; const root = resolvePath(base, env.cwd, env.user); if (!env.files[root]) return fail(`du: cannot access '${base}': No such file or directory`); const size = Object.keys(env.files).filter((path) => path === root || path.startsWith(`${root}/`)).reduce((sum, path) => sum + (env.files[path].content?.length || 4), 0); return ok(`${Math.max(4, Math.ceil(size / 1024))}\t${base}`); }
     case 'ls': {
       const invalid = rejectOption('ls', args, ['-a', '-l', '-h']); if (invalid) return invalid;
-      let target = args.find((a) => !a.startsWith('-')) || '.'; let path = resolvePath(target, env.cwd); const node = env.files[path]; const flags = optionSet(args);
+      let target = args.find((a) => !a.startsWith('-')) || '.'; let path = resolvePath(target, env.cwd, env.user); const node = env.files[path]; const flags = optionSet(args);
       if (!node) return fail(`ls: cannot access '${target}': No such file or directory`);
+      if (!canTraversePath(env, path) || node.type === 'dir' && !hasPermission(env, node, 0b101)) return fail(`ls: cannot open '${target}': Permission denied`);
       if (node.type === 'file') {
         if (!flags.has('-l')) return ok(target);
         env.evidence = [...new Set([...(env.evidence || []), path])];
@@ -289,9 +359,51 @@ function runOne(env, tokens, input = '') {
       const entries = (flags.has('-a') ? ['.', '..', ...visible] : visible).map((name) => { const childPath = resolvePath(`${target === '.' ? '' : `${target}/`}${name}`, env.cwd, env.user); const child = env.files[childPath]; const isDir = child?.type === 'dir'; const size = child?.content?.length || 4096; return `${permissionString(child || { type: isDir ? 'dir' : 'file' })} 1 ${child?.owner || 'learner'} ${child?.group || 'learners'} ${String(size).padStart(6)} Apr 10 09:00 ${name}${isDir ? '/' : ''}`; });
       return ok(`total ${entries.length}\n${entries.join('\n')}`);
     }
-    case 'cd': { if (args.length > 1) return fail('cd: too many arguments'); const target = args[0] === '-' ? (env.oldpwd || `/home/${env.user}`) : resolvePath(args[0] || `/home/${env.user}`, env.cwd, env.user); if (env.files[target]?.type !== 'dir') return fail(`cd: ${args[0] || ''}: No such directory`); env.oldpwd = env.cwd; env.cwd = target; return args[0] === '-' ? ok(target) : ok(''); }
-    case 'mkdir': { const invalid = rejectOption('mkdir', args, ['-p']); if (invalid) return invalid; const paths = args.filter((a) => !a.startsWith('-')); if (!paths.length) return fail('mkdir: missing operand'); for (const p of paths) { const full = resolvePath(p, env.cwd, env.user); if (env.files[full]) { if (optionSet(args).has('-p')) continue; return fail(`mkdir: cannot create directory '${p}': File exists`); } if (optionSet(args).has('-p')) { let current = ''; for (const part of full.split('/').filter(Boolean)) { current += `/${part}`; if (!env.files[current]) env.files[current] = { type: 'dir' }; else if (env.files[current].type !== 'dir') return fail(`mkdir: cannot create directory '${p}': a path component is not a directory`); } continue; } if (!env.files[parent(full)] || env.files[parent(full)].type !== 'dir') return fail(`mkdir: cannot create directory '${p}': parent directory does not exist`); env.files[full] = { type: 'dir' }; } return ok(''); }
-    case 'touch': { const invalid = rejectOption('touch', args, []); if (invalid) return invalid; if (!args.length) return fail('touch: missing file operand'); for (const p of args) { const full = resolvePath(p, env.cwd); if (!env.files[full]) { if (!env.files[parent(full)] || env.files[parent(full)].type !== 'dir') return fail(`touch: cannot touch '${p}': parent directory does not exist`); env.files[full] = { type: 'file', content: '' }; } } return ok(''); }
+    case 'cd': {
+      if (args.length > 1) return fail('cd: too many arguments');
+      const target = args[0] === '-' ? (env.oldpwd || `/home/${env.user}`) : resolvePath(args[0] || `/home/${env.user}`, env.cwd, env.user);
+      if (env.files[target]?.type !== 'dir') return fail(`cd: ${args[0] || ''}: No such directory`);
+      if (!canTraversePath(env, target)) return fail(`cd: ${args[0] || target}: Permission denied`);
+      env.oldpwd = env.cwd; env.cwd = target;
+      return args[0] === '-' ? ok(target) : ok('');
+    }
+    case 'mkdir': {
+      const invalid = rejectOption('mkdir', args, ['-p']); if (invalid) return invalid;
+      const paths = args.filter((a) => !a.startsWith('-')); if (!paths.length) return fail('mkdir: missing operand');
+      for (const p of paths) {
+        const full = resolvePath(p, env.cwd, env.user);
+        if (env.files[full]) { if (optionSet(args).has('-p')) continue; return fail(`mkdir: cannot create directory '${p}': File exists`); }
+        if (optionSet(args).has('-p')) {
+          let current = '';
+          for (const part of full.split('/').filter(Boolean)) {
+            const next = `${current}/${part}`;
+            if (!env.files[next]) {
+              if (!canWriteInParent(env, next)) return fail(`mkdir: cannot create directory '${p}': Permission denied`);
+              env.files[next] = { type: 'dir', owner: env.user, group: env.users?.[env.user]?.groups?.[0] || env.user, mode: '0755' };
+            } else if (env.files[next].type !== 'dir') return fail(`mkdir: cannot create directory '${p}': a path component is not a directory`);
+            current = next;
+          }
+          continue;
+        }
+        if (!env.files[parent(full)] || env.files[parent(full)].type !== 'dir') return fail(`mkdir: cannot create directory '${p}': parent directory does not exist`);
+        if (!canWriteInParent(env, full)) return fail(`mkdir: cannot create directory '${p}': Permission denied`);
+        env.files[full] = { type: 'dir', owner: env.user, group: env.users?.[env.user]?.groups?.[0] || env.user, mode: '0755' };
+      }
+      return ok('');
+    }
+    case 'touch': {
+      const invalid = rejectOption('touch', args, []); if (invalid) return invalid;
+      if (!args.length) return fail('touch: missing file operand');
+      for (const p of args) {
+        const full = resolvePath(p, env.cwd, env.user);
+        if (!env.files[full]) {
+          if (!env.files[parent(full)] || env.files[parent(full)].type !== 'dir') return fail(`touch: cannot touch '${p}': parent directory does not exist`);
+          if (!canWriteInParent(env, full)) return fail(`touch: cannot touch '${p}': Permission denied`);
+          env.files[full] = { type: 'file', content: '', owner: env.user, group: env.users?.[env.user]?.groups?.[0] || env.user, mode: '0644' };
+        } else if (!hasPermission(env, env.files[full], 0b010)) return fail(`touch: cannot touch '${p}': Permission denied`);
+      }
+      return ok('');
+    }
     case 'cat': { const numbered = args[0] === '-n'; const paths = numbered ? args.slice(1) : args; if (args.some((a) => a.startsWith('-') && a !== '-n')) return fail(`cat: unsupported option '${args.find((a) => a.startsWith('-') && a !== '-n')}'`); if (!paths.length) return input ? ok(input) : fail('cat: missing file operand'); const out = []; for (const p of paths) { const node = read(p); if (!node) return fail(`cat: ${env.lastReadError || `${p}: No such file`}`); out.push(node.content); } const content = out.join('\n'); return ok(numbered ? content.split('\n').map((line, i) => `${String(i + 1).padStart(6)}  ${line}`).join('\n') : content); }
     case 'echo': { let values = args; if (args[0] === '-n') values = args.slice(1); return ok(values.join(' ')); }
     case 'printf': { if (!args.length) return ok(''); const [format, ...values] = args; let index = 0; return ok(format.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/%s|%d|%i/g, () => values[index++] ?? '')); }
@@ -355,7 +467,7 @@ function runOne(env, tokens, input = '') {
     }
     case 'head': case 'tail': { const invalid = args.find((a) => a.startsWith('-') && a !== '-n' && !/^-\d+$/.test(a)); if (invalid) return fail(`${cmd}: unsupported option '${invalid}'. Use -n COUNT.`); let count = 10; const fileArgs = []; for (let i = 0; i < args.length; i++) { if (args[i] === '-n') { count = Number(args[++i]); if (!Number.isInteger(count) || count < 1) return fail(`${cmd}: -n needs a positive whole number`); } else if (/^-\d+$/.test(args[i])) count = Number(args[i].slice(1)); else if (!args[i].startsWith('-')) fileArgs.push(args[i]); } if (!fileArgs.length && !input) return fail(`${cmd}: missing file operand`); const contents = fileArgs.length ? fileArgs.map((p) => read(p)?.content ?? null) : [input]; if (contents.some((x) => x === null)) return fail(`${cmd}: cannot open file`); const lines = contents.join('\n').split('\n'); return ok((cmd === 'head' ? lines.slice(0, count) : lines.slice(-count)).join('\n')); }
     case 'grep': { const invalid = rejectOption('grep', args, ['-i', '-c', '-n', '-v']); if (invalid) return invalid; const flags = [...optionSet(args)]; const rest = args.filter((a) => !a.startsWith('-')); const pattern = rest.shift(); if (!pattern) return fail('grep: missing search pattern'); const data = rest.length ? rest.map((p) => ({ name: p, content: read(p)?.content ?? null })) : [{ name: '', content: input }]; if (data.some((x) => x.content === null)) return fail('grep: file not found'); const lines = data.flatMap(({ name, content }) => content.split('\n').map((line, i) => ({ line, number: i + 1 })).filter(({ line }) => (flags.includes('-i') ? line.toLowerCase().includes(pattern.toLowerCase()) : line.includes(pattern)) !== flags.includes('-v')).map(({ line, number }) => flags.includes('-n') ? `${number}:${line}` : line)); if (flags.includes('-c')) return lines.length ? ok(String(lines.length)) : { output: '0', error: true, noMatches: true }; if (!lines.length) return fail(`grep: no lines matched '${pattern}'`); return ok(lines.join('\n')); }
-    case 'find': { let base = '.'; let i = 0; if (args[i] && !args[i].startsWith('-')) base = args[i++]; const path = resolvePath(base, env.cwd); if (!env.files[path]) return fail(`find: '${base}': No such file or directory`); let name = null; let insensitive = false; let type = null; for (; i < args.length; i++) { if (args[i] === '-name' || args[i] === '-iname') { insensitive = args[i] === '-iname'; name = args[++i]; if (!name) return fail('find: -name needs a pattern'); } else if (args[i] === '-type') { type = args[++i]; if (!['f', 'd'].includes(type)) return fail('find: -type supports f (file) or d (directory)'); } else return fail(`find: unsupported option '${args[i]}'`); } const matches = Object.keys(env.files).filter((p) => (p === path || p.startsWith(path === '/' ? '/' : `${path}/`)) && (!name || (insensitive ? p.split('/').pop().toLowerCase().includes(name.replaceAll('*', '').toLowerCase()) : p.split('/').pop().includes(name.replaceAll('*', '')))) && (!type || (type === 'd' ? env.files[p].type === 'dir' : env.files[p].type === 'file'))); return ok(matches.join('\n')); }
+    case 'find': { let base = '.'; let i = 0; if (args[i] && !args[i].startsWith('-')) base = args[i++]; const path = resolvePath(base, env.cwd, env.user); if (!env.files[path]) return fail(`find: '${base}': No such file or directory`); let name = null; let insensitive = false; let type = null; for (; i < args.length; i++) { if (args[i] === '-name' || args[i] === '-iname') { insensitive = args[i] === '-iname'; name = args[++i]; if (!name) return fail('find: -name needs a pattern'); } else if (args[i] === '-type') { type = args[++i]; if (!['f', 'd'].includes(type)) return fail('find: -type supports f (file) or d (directory)'); } else return fail(`find: unsupported option '${args[i]}'`); } const matches = Object.keys(env.files).filter((p) => (p === path || p.startsWith(path === '/' ? '/' : `${path}/`)) && (!name || (insensitive ? p.split('/').pop().toLowerCase().includes(name.replaceAll('*', '').toLowerCase()) : p.split('/').pop().includes(name.replaceAll('*', '')))) && (!type || (type === 'd' ? env.files[p].type === 'dir' : env.files[p].type === 'file'))); return ok(matches.join('\n')); }
     case 'wc': { const invalid = args.find((a) => a.startsWith('-') && !/^-[lwc]+$/.test(a)); if (invalid) return fail(`wc: unsupported option '${invalid}'. Use -l, -w, or -c.`); const flags = args.filter((a) => a.startsWith('-')).join(''); const paths = args.filter((a) => !a.startsWith('-')); const contents = paths.length ? paths.map((p) => read(p)?.content ?? null) : [input]; if (contents.some((x) => x === null)) return fail('wc: file not found'); return ok(contents.map((c, i) => { const lines = c ? c.split('\n').length : 0; const words = c.trim() ? c.trim().split(/\s+/).length : 0; const cols = [flags.includes('l') ? lines : null, flags.includes('w') ? words : null, flags.includes('c') ? c.length : null].filter((x) => x !== null); if (!cols.length) cols.push(lines, words, c.length); return `${cols.join(' ')}${paths[i] ? ` ${paths[i]}` : ''}`; }).join('\n')); }
     case 'sort': { const invalid = rejectOption('sort', args, ['-r', '-u']); if (invalid) return invalid; const path = args.find((a) => !a.startsWith('-')); const content = path ? read(path)?.content : input; if (content === undefined || content === null) return fail('sort: file not found'); const lines = content.split('\n').sort((a, b) => args.includes('-r') ? b.localeCompare(a) : a.localeCompare(b)); return ok((args.includes('-u') ? [...new Set(lines)] : lines).join('\n')); }
     case 'uniq': { const invalid = rejectOption('uniq', args, []); if (invalid) return invalid; const path = args.find((a) => !a.startsWith('-')); const content = path ? read(path)?.content : input; if (content === undefined || content === null) return fail('uniq: file not found'); let prev = null; return ok(content.split('\n').filter((line) => { if (line === prev) return false; prev = line; return true; }).join('\n')); }
@@ -431,8 +543,40 @@ function runOne(env, tokens, input = '') {
       persistRemoteHost(env);
       return ok('');
     }
-    case 'cp': case 'mv': { const invalid = rejectOption(cmd, args, []); if (invalid) return invalid; const paths = args; if (paths.length !== 2) return fail(`${cmd}: usage: ${cmd} SOURCE DESTINATION`); const [from, to] = paths.map((p) => resolvePath(p, env.cwd)); const src = env.files[from]; if (!src) return fail(`${cmd}: cannot stat '${paths[0]}': No such file`); if (src.type === 'dir' && cmd === 'cp') return fail('cp: directory copying is not supported in this training shell'); const target = env.files[to]?.type === 'dir' ? `${to}/${from.split('/').pop()}` : to; if (!env.files[parent(target)] || env.files[parent(target)].type !== 'dir') return fail(`${cmd}: destination directory does not exist`); if (src.type === 'dir' && target.startsWith(`${from}/`)) return fail(`${cmd}: cannot move a folder into itself`); if (src.type === 'dir') { const moved = Object.keys(env.files).filter((key) => key === from || key.startsWith(`${from}/`)).sort((a, b) => a.length - b.length); moved.forEach((key) => { env.files[`${target}${key.slice(from.length)}`] = { ...env.files[key] }; }); moved.reverse().forEach((key) => delete env.files[key]); } else { env.files[target] = { ...src }; if (cmd === 'mv') delete env.files[from]; } return ok(''); }
-    case 'rm': { const invalid = rejectOption('rm', args, ['-r', '-rf', '-fr', '-f']); if (invalid) return invalid; const paths = args.filter((a) => !a.startsWith('-')); if (!paths.length) return fail('rm: missing operand'); for (const p of paths) { const full = resolvePath(p, env.cwd); if (!env.files[full]) return fail(`rm: cannot remove '${p}': No such file`); if (env.files[full].type === 'dir' && !args.some((a) => a.includes('r'))) return fail(`rm: cannot remove '${p}': is a directory (use -r)`); const descendants = Object.keys(env.files).filter((key) => key === full || key.startsWith(`${full}/`)); descendants.forEach((key) => delete env.files[key]); } return ok(''); }
+    case 'cp': case 'mv': {
+      const invalid = rejectOption(cmd, args, []); if (invalid) return invalid;
+      if (args.length !== 2) return fail(`${cmd}: usage: ${cmd} SOURCE DESTINATION`);
+      const [from, to] = args.map((p) => resolvePath(p, env.cwd, env.user));
+      const src = env.files[from]; if (!src) return fail(`${cmd}: cannot stat '${args[0]}': No such file`);
+      if (!canTraversePath(env, from) || src.type === 'file' && !hasReadPermission(env, src, from)) return fail(`${cmd}: cannot access '${args[0]}': Permission denied`);
+      if (src.type === 'dir' && cmd === 'cp') return fail('cp: directory copying is not supported in this training shell');
+      const target = env.files[to]?.type === 'dir' ? `${to}/${from.split('/').pop()}` : to;
+      if (!env.files[parent(target)] || env.files[parent(target)].type !== 'dir') return fail(`${cmd}: destination directory does not exist`);
+      if (!canWriteInParent(env, target) || cmd === 'mv' && !canWriteInParent(env, from)) return fail(`${cmd}: Permission denied`);
+      if (src.type === 'dir' && target.startsWith(`${from}/`)) return fail(`${cmd}: cannot move a folder into itself`);
+      if (src.type === 'dir') {
+        const moved = Object.keys(env.files).filter((key) => key === from || key.startsWith(`${from}/`)).sort((a, b) => a.length - b.length);
+        moved.forEach((key) => { env.files[`${target}${key.slice(from.length)}`] = { ...env.files[key] }; });
+        moved.reverse().forEach((key) => delete env.files[key]);
+      } else {
+        env.files[target] = { ...src, ...(cmd === 'cp' ? { owner: env.user, group: env.users?.[env.user]?.groups?.[0] || env.user } : {}) };
+        if (cmd === 'mv') delete env.files[from];
+      }
+      return ok('');
+    }
+    case 'rm': {
+      const invalid = rejectOption('rm', args, ['-r', '-rf', '-fr', '-f']); if (invalid) return invalid;
+      const paths = args.filter((a) => !a.startsWith('-')); if (!paths.length) return fail('rm: missing operand');
+      for (const p of paths) {
+        const full = resolvePath(p, env.cwd, env.user);
+        if (!env.files[full]) return fail(`rm: cannot remove '${p}': No such file`);
+        if (env.files[full].type === 'dir' && !args.some((a) => a.includes('r'))) return fail(`rm: cannot remove '${p}': is a directory (use -r)`);
+        if (!canWriteInParent(env, full) || env.files[full].type === 'dir' && !canTraversePath(env, full)) return fail(`rm: cannot remove '${p}': Permission denied`);
+        const descendants = Object.keys(env.files).filter((key) => key === full || key.startsWith(`${full}/`));
+        descendants.forEach((key) => delete env.files[key]);
+      }
+      return ok('');
+    }
     case 'ps': { const invalid = rejectOption('ps', args, ['-a', '-u', '-x', '-e', '-f']); if (invalid) return invalid; if (args.some((a) => !a.startsWith('-') && a !== 'aux')) return fail(`ps: unsupported argument '${args.find((a) => !a.startsWith('-') && a !== 'aux')}'`); env.evidence = [...new Set([...(env.evidence || []), 'system:processes'])]; const rows = env.processes.map((p) => `${p.user.padEnd(8)} ${String(p.pid).padEnd(5)} ${String(p.cpu).padEnd(5)} ${String(p.mem).padEnd(5)} ${p.command}`); return ok(`${args.includes('aux') || optionSet(args).has('-u') || optionSet(args).has('-e') ? 'USER     PID   %CPU  %MEM  COMMAND\n' : '  PID TTY          TIME CMD\n'}${rows.join('\n')}`); }
     case 'top': { if (args.length) return fail('top: options are not supported by this training snapshot'); env.evidence = [...new Set([...(env.evidence || []), 'system:processes'])]; const rows = env.processes.map((p) => `${String(p.pid).padEnd(5)} ${p.user.padEnd(8)} ${String(p.cpu).padEnd(5)} ${String(p.mem).padEnd(5)} ${p.command}`).join('\n'); return ok(`top - training snapshot\nTasks: ${env.processes.length} total\nMiB Mem: ${env.memory.total} total, ${env.memory.free} free, ${env.memory.used} used\nPID   USER     %CPU  %MEM COMMAND\n${rows}`); }
     case 'df': { const invalid = rejectOption('df', args, ['-h']); if (invalid) return invalid; if (args.filter((a) => !a.startsWith('-')).length) return fail('df: this training command accepts no file arguments'); env.evidence = [...new Set([...(env.evidence || []), 'system:disk'])]; const used = Math.round(env.disk.used / env.disk.total * 100); return ok(`Filesystem      Size  Used Avail Use% Mounted on\ntraining-disk   ${env.disk.total}G  ${env.disk.used}G  ${env.disk.available}G  ${used}% /`); }
@@ -577,14 +721,14 @@ function runOne(env, tokens, input = '') {
         env.network.endpointChecks = [...(env.network.endpointChecks || []), { url, port: match ? Number(match[1]) : null, status: env.endpoints[url].status }];
       }
       if (output) {
-        const path = resolvePath(output, env.cwd);
+        const path = resolvePath(output, env.cwd, env.user);
         if (!env.files[parent(path)] || env.files[parent(path)].type !== 'dir') return fail(`curl: cannot write '${output}': parent directory does not exist`);
         env.files[path] = { type: 'file', content: body };
         return ok(`Saved simulated response from ${url} to ${output}`);
       }
       return ok(body);
     }
-    case 'help': { const examples = { pwd: 'pwd - print your current directory', ls: 'ls [-la] [PATH] - list files and folders', cd: 'cd [PATH] - change directory; cd - returns to the previous directory', mkdir: 'mkdir [-p] PATH - create a folder', touch: 'touch FILE - create an empty file', cat: 'cat [-n] FILE - read a file', echo: 'echo TEXT - print text', printf: 'printf FORMAT [VALUE...] - format text', head: 'head [-n COUNT] FILE - show the first lines', tail: 'tail [-n COUNT] FILE - show the last lines', grep: 'grep [-icnv] PATTERN [FILE...] - search matching lines', find: 'find PATH -name NAME - search file names', wc: 'wc [-lwc] FILE - count lines, words, or bytes', sort: 'sort [-ru] FILE - order file lines', uniq: 'uniq FILE - remove adjacent duplicate lines', cp: 'cp SOURCE DESTINATION - copy a file', mv: 'mv SOURCE DESTINATION - move a file', rm: 'rm [-r] PATH - remove a file or folder', tree: 'tree [PATH] - show a directory tree', file: 'file PATH - identify a file type', du: 'du [PATH] - show simulated disk usage', lpinfo: 'lpinfo -v - list fictional printers', lpadmin: 'lpadmin -p NAME -E -v URI -m everywhere - configure an approved training printer', lpstat: 'lpstat -p or lpstat -o - inspect queues and jobs', lp: 'lp -d QUEUE FILE - queue a simulated print job', cancel: 'cancel QUEUE-JOB-ID - cancel a simulated print job', whoami: 'whoami - show the current user', hostname: 'hostname - show the computer name', ssh: 'ssh USER@HOST - connect to a fictional training host', exit: 'exit - return from an SSH training session', ip: 'ip addr or ip route - inspect training network state', getent: 'getent hosts NAME - query training DNS', ss: 'ss -ltn - inspect training TCP listeners', uname: 'uname [-a|-r] - show kernel information', date: 'date - show the training system clock', which: 'which COMMAND - locate a simulated command', man: 'man COMMAND - read a short manual page', less: 'less FILE - read a text file', more: 'more FILE - read a text file', ps: 'ps aux - list simulated processes', top: 'top - show a simulated resource snapshot', df: 'df -h - show disk usage', free: 'free -h - show memory usage', systemctl: 'systemctl status SERVICE or restart SERVICE - inspect or change an authorized training service', jq: 'jq [-r] .KEY FILE - validate JSON and read a top-level value', editor: 'editor set FILE .KEY VALUE - set one top-level value in a training JSON file', journalctl: 'journalctl [-u SERVICE] [-n COUNT] - inspect simulated logs', curl: 'curl [-o FILE] URL - fetch fictional training data', history: 'history - show commands from this session', clear: 'clear - clear terminal output' }; if (args[0]) return examples[args[0]] ? ok(examples[args[0]]) : fail(`help: no training command named '${args[0]}'`); return ok(`Available: ${Object.keys(examples).join(' ')}\nUse Tab to complete a command or file name. This Ubuntu shell runs on fictional training data.`); }
+    case 'help': { const examples = { pwd: 'pwd - print your current directory', ls: 'ls [-la] [PATH] - list files and folders', cd: 'cd [PATH] - change directory; cd - returns to the previous directory', mkdir: 'mkdir [-p] PATH - create a folder', touch: 'touch FILE - create an empty file', cat: 'cat [-n] FILE - read a file', echo: 'echo TEXT - print text', printf: 'printf FORMAT [VALUE...] - format text', head: 'head [-n COUNT] FILE - show the first lines', tail: 'tail [-n COUNT] FILE - show the last lines', grep: 'grep [-icnv] PATTERN [FILE...] - search matching lines', find: 'find PATH -name NAME - search file names', wc: 'wc [-lwc] FILE - count lines, words, or bytes', sort: 'sort [-ru] FILE - order file lines', uniq: 'uniq FILE - remove adjacent duplicate lines', cp: 'cp SOURCE DESTINATION - copy a file', mv: 'mv SOURCE DESTINATION - move a file', rm: 'rm [-r] PATH - remove a file or folder', tree: 'tree [PATH] - show a directory tree', file: 'file PATH - identify a file type', du: 'du [PATH] - show simulated disk usage', lpinfo: 'lpinfo -v - list fictional printers', lpadmin: 'lpadmin -p NAME -E -v URI -m everywhere - configure an approved training printer', lpstat: 'lpstat -p or lpstat -o - inspect queues and jobs', lp: 'lp -d QUEUE FILE - queue a simulated print job', cancel: 'cancel QUEUE-JOB-ID - cancel a simulated print job', whoami: 'whoami - show the current user', hostname: 'hostname - show the computer name', ssh: 'ssh USER@HOST - connect to a fictional training host', exit: 'exit - return from an SSH training session', ip: 'ip addr or ip route - inspect training network state', getent: 'getent hosts NAME - query training DNS', ss: 'ss -ltn - inspect training TCP listeners', uname: 'uname [-a|-r] - show kernel information', date: 'date - show the training system clock', which: 'which COMMAND - locate a simulated command', man: 'man COMMAND - read a short manual page', less: 'less FILE - read a text file', more: 'more FILE - read a text file', ps: 'ps aux - list simulated processes', top: 'top - show a simulated resource snapshot', df: 'df -h - show disk usage', free: 'free -h - show memory usage', systemctl: 'systemctl status SERVICE or restart SERVICE - inspect or change an authorized training service', jq: 'jq [-r] .KEY FILE - validate JSON and read a top-level value', editor: 'editor set FILE .KEY VALUE - set one top-level value in a training JSON file', journalctl: 'journalctl [-u SERVICE] [-n COUNT] - inspect simulated logs', curl: 'curl [-o FILE] URL - fetch fictional training data', history: 'history - show commands from this session', clear: 'clear - clear terminal output' }; if (env.disablePrinterCommands) ['lpinfo', 'lpadmin', 'lpstat', 'lp', 'cancel'].forEach((name) => delete examples[name]); if (args[0]) return examples[args[0]] ? ok(examples[args[0]]) : fail(`help: no training command named '${args[0]}'`); return ok(`Available: ${Object.keys(examples).join(' ')}\nUse Tab to complete a command or file name. This Ubuntu shell runs on fictional training data.`); }
     default: return fail(`command not found: ${cmd}. This is a training shell; type help to see supported commands.`);
   }
 }
@@ -605,6 +749,166 @@ export function executeCommand(env, raw, history = []) {
   const cwdBefore = env.cwd;
   env.commandContext = { hostBefore: env.host, userBefore: env.user };
   const command = String(raw ?? '').trim();
+  if (env.initialSetup && !env.interactivePrompt) return commandResult(env, '', 'First-run admin setup is unavailable. Reload the computer to restart setup.', 1, cwdBefore);
+  if (env.loginScreen && !env.interactivePrompt) {
+    const username = command;
+    const account = env.users?.[username];
+    if (!username || !account) return commandResult(env, '', 'Login incorrect. Enter an account name to try again:', 1, cwdBefore, { loginInput: true });
+    if (!account.passwordHash) {
+      env.interactivePrompt = { kind: 'password', operation: 'initial-password', username, step: 'new' };
+      return commandResult(env, `Set a password for ${username}:`, '', 0, cwdBefore, { loginInput: true });
+    }
+    env.interactivePrompt = { kind: 'password', operation: 'login', username };
+    return commandResult(env, 'Password:', '', 0, cwdBefore, { loginInput: true });
+  }
+  if (env.interactivePrompt?.kind === 'password') {
+    if (command === 'cancel') {
+      const canceledPrompt = env.interactivePrompt;
+      if (canceledPrompt?.operation === 'first-admin-password') {
+        env.interactivePrompt = { ...canceledPrompt, step: 'new' };
+        return commandResult(env, '^C\nSetup is not complete. Set a password for the admin account to continue.', '', 130, cwdBefore);
+      }
+      delete env.interactivePrompt;
+      if (canceledPrompt?.operation === 'adduser') return commandResult(env, `^C\nAccount setup for '${canceledPrompt.username}' canceled. No account was created.`, '', 130, cwdBefore);
+      return commandResult(env, '^C\nPassword operation canceled.', '', 130, cwdBefore);
+    }
+    const prompt = env.interactivePrompt;
+    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password'].includes(prompt.operation) && prompt.step === 'new') {
+      if (command.length < 8 || command.length > 128) return commandResult(env, '', 'Password must be at least 8 characters and no more than 128 characters. Try again:', 1, cwdBefore, { secretInput: true });
+      const salt = randomBytes(16).toString('hex');
+      env.interactivePrompt = { ...prompt, step: 'confirm', passwordSalt: salt, passwordHash: scryptSync(command, salt, 32).toString('hex') };
+      return commandResult(env, '', 'Retype the new password:', 0, cwdBefore, { secretInput: true });
+    }
+    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password'].includes(prompt.operation) && prompt.step === 'confirm') {
+      const actual = Buffer.from(scryptSync(command, prompt.passwordSalt, 32).toString('hex'), 'hex');
+      const expected = Buffer.from(prompt.passwordHash, 'hex');
+      if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+        env.interactivePrompt = { kind: 'password', operation: prompt.operation, username: prompt.username, step: 'new' };
+        return commandResult(env, '', 'Passwords do not match. Enter a new password:', 1, cwdBefore, { secretInput: true });
+      }
+      const username = prompt.username;
+      if (prompt.operation === 'passwd' || prompt.operation === 'initial-password') {
+        env.users[username].passwordSalt = prompt.passwordSalt;
+        env.users[username].passwordHash = prompt.passwordHash;
+        delete env.interactivePrompt;
+        const message = prompt.operation === 'initial-password'
+          ? `Administrator password created for ${username}. Sign in with the new password.`
+          : `Password updated successfully for ${username}.`;
+        return commandResult(env, message, '', 0, cwdBefore, { secretInput: true });
+      }
+      if (prompt.operation === 'first-user-password') {
+        env.users = { [username]: { uid: 1000, groups: [username, 'sudo'], passwordSalt: prompt.passwordSalt, passwordHash: prompt.passwordHash } };
+        env.groups = [...new Set([...(env.groups || []), username, 'sudo'])];
+        env.adminUsers = [username];
+        env.role = 'training-admin';
+        env.user = username;
+        env.cwd = `/home/${username}`;
+        env.oldpwd = env.cwd;
+        env.loggedIn = false;
+        env.loginScreen = true;
+        env.initialSetup = false;
+        env.files = Object.fromEntries(Object.entries(env.files || {}).filter(([path]) => !path.startsWith('/home/')));
+        env.files['/home'] = { type: 'dir' };
+        env.files[env.cwd] = { type: 'dir', owner: username, group: username, mode: '0700' };
+        for (const folder of ['Desktop', 'Documents', 'Downloads', 'Projects']) {
+          env.files[`${env.cwd}/${folder}`] = { type: 'dir', owner: username, group: username, mode: '0755' };
+        }
+        delete env.interactivePrompt;
+        return commandResult(env, `Ubuntu setup complete. Administrator account '${username}' created. Returning to the login screen...`, '', 0, cwdBefore, { secretInput: true });
+      }
+      if (prompt.operation === 'first-admin-password') {
+        const username = 'admin';
+        env.users = { ...(env.users || {}), [username]: { uid: 1000, groups: ['admin', 'sudo'], passwordSalt: prompt.passwordSalt, passwordHash: prompt.passwordHash } };
+        env.groups = [...new Set([...(env.groups || []), 'admin', 'sudo'])];
+        env.adminUsers = ['admin'];
+        env.role = 'training-admin';
+        env.user = username;
+        env.cwd = `/home/${username}`;
+        env.oldpwd = env.cwd;
+        env.loggedIn = false;
+        env.loginScreen = true;
+        env.initialSetup = false;
+        env.files = Object.fromEntries(Object.entries(env.files || {}).filter(([path]) => !path.startsWith('/home/')));
+        env.files['/home'] = { type: 'dir' };
+        env.files[env.cwd] = { type: 'dir', owner: username, group: username, mode: '0700' };
+        for (const folder of ['Desktop', 'Documents', 'Downloads', 'Projects']) {
+          env.files[`${env.cwd}/${folder}`] = { type: 'dir', owner: username, group: username, mode: '0755' };
+        }
+        delete env.interactivePrompt;
+        return commandResult(env, 'Ubuntu setup complete. The admin account is ready. Returning to the login screen...', '', 0, cwdBefore, { secretInput: true });
+      }
+      const home = `/home/${username}`;
+      env.users ||= {};
+      const highestUid = Math.max(1000, ...Object.values(env.users).map((account) => Number(account.uid) || 0));
+      env.users[username] = { uid: highestUid + 1, groups: [username], passwordSalt: prompt.passwordSalt, passwordHash: prompt.passwordHash };
+      env.groups = [...new Set([...(env.groups || []), username])];
+      for (const path of [home, `${home}/Desktop`, `${home}/Documents`, `${home}/Downloads`, `${home}/Projects`]) env.files[path] = { type: 'dir', owner: username, group: username, mode: path === home ? '0700' : '0755' };
+      env.files[`${home}/readme.txt`] = { type: 'file', content: `Welcome, ${username}. This is your Ubuntu training home directory.\n`, owner: username, group: username, mode: '0644' };
+      delete env.interactivePrompt;
+      return commandResult(env, `Adding user '${username}' ...\nAdding new group '${username}' (${env.users[username].uid}) ...\nCreating home directory '${home}' ...\nUser '${username}' added successfully.\nThe administrator session remains signed in as ${env.user}. Use 'logout' to return to the account chooser, or 'su - ${username}' to switch temporarily.`, '', 0, cwdBefore, { secretInput: true });
+    }
+    if (prompt.operation === 'sudo-adduser') {
+      const account = env.users?.[prompt.username];
+      if (!account?.passwordSalt || !account?.passwordHash) {
+        delete env.interactivePrompt;
+        return commandResult(env, '', `sudo: no login password is set for ${prompt.username}. Run passwd and try again.`, 1, cwdBefore, { secretInput: true });
+      }
+      const actual = Buffer.from(scryptSync(command, account?.passwordSalt || '', 32).toString('hex'), 'hex');
+      const expected = Buffer.from(account?.passwordHash || '', 'hex');
+      if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+        const attempts = (prompt.attempts || 0) + 1;
+        if (attempts >= 3) {
+          delete env.interactivePrompt;
+          return commandResult(env, '', 'sudo: 3 incorrect password attempts. Account setup was not started.', 1, cwdBefore, { secretInput: true });
+        }
+        env.interactivePrompt = { ...prompt, attempts };
+        return commandResult(env, '', `Authentication failed for ${prompt.username}. Enter the same password used to sign in. Attempt ${attempts} of 3.\n[sudo] password for ${prompt.username}:`, 1, cwdBefore, { secretInput: true });
+      }
+      const parsed = tokenize(prompt.command);
+      if (parsed.error) {
+        delete env.interactivePrompt;
+        return commandResult(env, '', `sudo: ${parsed.error}`, 2, cwdBefore, { secretInput: true });
+      }
+      env.sudoContext = true;
+      let result;
+      try {
+        result = runOne(env, parsed.tokens, '');
+      } finally {
+        delete env.sudoContext;
+      }
+      if (result.error) delete env.interactivePrompt;
+      return commandResult(env, result.output, result.error ? result.output : '', result.error ? 1 : 0, cwdBefore, { secretInput: true });
+    }
+    if (prompt.operation === 'su') {
+      const account = env.users?.[prompt.username];
+      const actual = Buffer.from(scryptSync(command, account?.passwordSalt || '', 32).toString('hex'), 'hex');
+      const expected = Buffer.from(account?.passwordHash || '', 'hex');
+      const authenticated = expected.length === actual.length && timingSafeEqual(expected, actual);
+      delete env.interactivePrompt;
+      if (!authenticated) return commandResult(env, '', `su: Authentication failure for ${prompt.username}`, 1, cwdBefore, { secretInput: true });
+      env.userSession = { user: env.user, cwd: env.cwd, oldpwd: env.oldpwd, role: env.role };
+      env.user = prompt.username;
+      env.role = 'user';
+      env.oldpwd = env.cwd;
+      env.cwd = `/home/${prompt.username}`;
+      return commandResult(env, `Welcome to Ubuntu 24.04.2 LTS, ${prompt.username}.\nType 'exit' to return to ${env.userSession.user}.`, '', 0, cwdBefore, { secretInput: true });
+    }
+    if (prompt.operation === 'login') {
+      const account = env.users?.[prompt.username];
+      const actual = Buffer.from(scryptSync(command, account?.passwordSalt || '', 32).toString('hex'), 'hex');
+      const expected = Buffer.from(account?.passwordHash || '', 'hex');
+      const authenticated = expected.length === actual.length && timingSafeEqual(expected, actual);
+      delete env.interactivePrompt;
+      if (!authenticated) return commandResult(env, '', 'Login incorrect. Enter an account name to try again:', 1, cwdBefore, { secretInput: true });
+      env.user = prompt.username;
+      env.role = env.adminUsers?.includes(prompt.username) ? 'training-admin' : 'user';
+      env.loggedIn = true;
+      env.loginScreen = false;
+      env.oldpwd = `/home/${prompt.username}`;
+      env.cwd = env.oldpwd;
+      return commandResult(env, `Welcome to Ubuntu 24.04.2 LTS, ${prompt.username}.\nLast login: today on tty1`, '', 0, cwdBefore, { secretInput: true });
+    }
+  }
   if (!command) return commandResult(env, '', '', 0, cwdBefore);
   if (command === 'clear') return commandResult(env, '', '', 0, cwdBefore, { clear: true });
   if (command === 'history') return commandResult(env, history.map((item, i) => ` ${String(i + 1).padStart(4)}  ${item}`).join('\n'), '', 0, cwdBefore);
@@ -777,5 +1081,5 @@ export function executeCommand(env, raw, history = []) {
   return commandResult(env, piped, stderr, exitCode, cwdBefore);
 }
 
-export function getNode(env, path) { return env.files[resolvePath(path, env.cwd)]; }
+export function getNode(env, path) { return env.files[resolvePath(path, env.cwd, env.user)]; }
 export function pathExists(env, path, type) { const node = getNode(env, path); return !!node && (!type || node.type === type); }

@@ -20,6 +20,10 @@
 .term-line.ubuntu-welcome { margin-top: 7px; color: #f1eaf2; }
 .term-line.notice { color: #b9aebe; }
 .term-line.startup-tip { color: #b9aebe; }
+.boot-progress { display: flex; width: min(430px, 100%); height: 16px; align-items: center; position: relative; margin: 12px 0 16px; overflow: hidden; border: 1px solid #716b74; border-radius: 2px; background: #100f12; }
+.boot-progress > span { height: 100%; background: linear-gradient(90deg,#747078,#c7c4cb); transition: width .12s linear; }
+.boot-progress b { position: absolute; right: 7px; color: #f2eef4; font: 10px var(--mono); text-shadow: 0 1px 2px #000; }
+.first-boot-output { margin-bottom: 12px; }
 .startup-tip b { color: #92c994; font-weight: 500; }
 .term-line.command { margin-top: 4px; color: #e8e1e9; }
 .prompt-user { color: #e95420; }
@@ -38,6 +42,7 @@ body .terminal-card .terminal-form input:focus-visible { outline: none; box-shad
 .terminal-form button { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border: 1px solid #625366; border-radius: 6px; background: #382d3d; color: #eadfeb; cursor: pointer; transition: background .15s, border-color .15s; }
 .terminal-form button:hover:not(:disabled) { border-color: #e95420; background: #493641; }
 .terminal-form button:disabled { opacity: .55; }
+.terminal-prompt-hint { margin: 5px 0 0; color: #ff9388; font-size: 10px; }
 @media (max-width: 500px) { .terminal-clear { gap: 0; padding: 0 6px; } .terminal-clear span { display: none; } }
 .terminal-foot { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 13px; border-top: 1px solid #493b4b; background: #29212e; color: #b8aebe; font-size: 9px; }
 .terminal-foot kbd { padding: 2px 5px; border-radius: 4px; background: #453849; color: #eee5ef; font: 9px var(--mono); }
