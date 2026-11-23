@@ -104,6 +104,7 @@ export default function useLearningController(userId) {
       openReference: () => setShowReference(true), closeReference: () => setShowReference(false),
       openAlbum: () => setPage('album'),
       openTerminal: () => setPage('terminal'),
+      openKiosk: () => setPage('kiosk'),
       openReset: () => setResetOpen(true), closeReset: () => setResetOpen(false),
     },
   };
