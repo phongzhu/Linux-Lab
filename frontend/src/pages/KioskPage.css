@@ -13,3 +13,33 @@
 @media(max-width:700px){.kiosk-page{min-height:calc(100dvh - 132px);padding:15px 12px 30px;overflow:visible}.kiosk-cabinet{width:min(570px,100%);height:auto;min-height:calc(100dvh - 150px);padding:12px 12px 18px;gap:10px;border-radius:20px 20px 14px 14px;box-shadow:0 14px 35px rgba(32,62,59,.18),inset 0 0 0 5px #d4dfda,inset 0 0 0 7px #fbfdfc}.kiosk-cabinet-header{height:45px;flex-basis:45px;padding:0 6px}.kiosk-brand-symbol{width:34px;height:34px}.kiosk-screen-frame{min-height:490px;padding:7px;border-radius:15px}.kiosk-screen{border-radius:9px}.kiosk-screen-content{padding:19px 14px}.kiosk-screen-brand{padding:0 10px}.kiosk-screen-brand small{font-size:7px}.kiosk-step-header{gap:7px}.kiosk-step-header h2{font-size:20px}.kiosk-step-header>div:first-child>p:last-child{max-width:250px}.kiosk-step-buttons{gap:4px}.kiosk-small-button,.kiosk-cancel-button{padding:0 8px}.kiosk-service-options{gap:8px}.kiosk-service-card{min-height:150px;padding:11px}.kiosk-keypad button{height:42px}.kiosk-hardware-row{height:107px;flex-basis:107px;padding:0 9px}.kiosk-receipt-hardware{width:29%}.kiosk-acceptor{width:59%;padding:7px 7px 5px}.bill-choices{gap:3px}.bill-choices button{min-width:34px}.kiosk-speaker{display:none}.kiosk-cabinet-footer{font-size:6px}.kiosk-base{bottom:-22px;height:13px}}
 @media(max-width:380px){.kiosk-page{padding-left:7px;padding-right:7px}.kiosk-cabinet{padding-left:9px;padding-right:9px}.kiosk-step-header{display:block}.kiosk-step-buttons{margin-top:8px}.kiosk-service-card>span:nth-of-type(2){font-size:9px}.kiosk-acceptor{width:64%;padding-left:4px;padding-right:4px}.kiosk-receipt-hardware{width:25%}.bill-choices button{min-width:30px;font-size:7px}.hardware-label{font-size:7px}.kiosk-primary,.kiosk-secondary{padding:0 11px;font-size:11px}}
 @media(prefers-reduced-motion:reduce){.kiosk-screen-content,.kiosk-processing-ring,.receipt-paper,.kiosk-cancel-overlay,.kiosk-cancel-dialog{animation:none}.kiosk-primary,.kiosk-secondary,.kiosk-cancel-button,.kiosk-small-button,.kiosk-danger,.kiosk-service-card,.kiosk-keypad button,.bill-choices button,.kiosk-progress-track span{transition:none}}
+
+/* Touchscreen visual system: bright, welcoming start screen with high contrast. */
+.kiosk-screen[data-step="welcome"] .kiosk-screen-brand{height:40px;flex-basis:40px;padding:0 18px;border-bottom:1px solid rgba(255,255,255,.12);background:#174d50;color:#e9f2e7}
+.kiosk-screen[data-step="welcome"] .kiosk-screen-brand small{color:#b8d0c9}
+.kiosk-screen[data-step="welcome"] .screen-brand-dot{background:#f2d24e;box-shadow:0 0 0 4px rgba(242,210,78,.2)}
+.kiosk-screen[data-step="welcome"] .kiosk-screen-content{position:relative;isolation:isolate;overflow:hidden;padding:18px 26px;background:radial-gradient(ellipse at 50% 16%,rgba(78,174,151,.55),transparent 49%),linear-gradient(145deg,#16877b,#126b69 58%,#15535a)}
+.kiosk-screen[data-step="welcome"] .kiosk-screen-content:before{content:"";position:absolute;z-index:-1;left:50%;bottom:-205px;width:min(370px,90%);aspect-ratio:1;transform:translateX(-50%);border-radius:50%;background:#f3d24d;box-shadow:0 0 0 15px rgba(250,226,119,.12)}
+.kiosk-screen[data-step="welcome"] .kiosk-screen-content:after{content:"";position:absolute;z-index:-1;right:-64px;top:-94px;width:190px;height:190px;border:1px solid rgba(230,246,231,.17);border-radius:50%;box-shadow:0 0 0 22px rgba(230,246,231,.035),0 0 0 46px rgba(230,246,231,.025)}
+.kiosk-screen[data-step="welcome"] .kiosk-welcome{position:relative;z-index:1;gap:0}
+.kiosk-hero-symbol{width:58px;height:58px;margin-bottom:14px;display:grid;place-items:center;border:1px solid rgba(31,81,74,.14);border-radius:19px;background:linear-gradient(145deg,#ffe678,#edc831);box-shadow:0 9px 22px rgba(13,55,54,.2);color:#155b59;font-size:30px;font-weight:850}
+.kiosk-screen[data-step="welcome"] .kiosk-overline{margin-bottom:10px;color:#f6df82}
+.kiosk-screen[data-step="welcome"] .kiosk-welcome h1{color:#fff;font-size:clamp(29px,4vw,39px);line-height:1.04;letter-spacing:-1.25px;text-shadow:0 2px 10px rgba(12,52,52,.12)}
+.kiosk-screen[data-step="welcome"] .kiosk-copy{max-width:340px;margin:12px auto 13px;color:#d8eae2;font-size:13px;line-height:1.55}
+.kiosk-service-chips{display:flex;align-items:center;gap:9px;margin:0 0 17px;padding:8px 13px;border:1px solid rgba(232,246,236,.25);border-radius:999px;background:rgba(12,63,64,.18);color:#f2f7ed;font-size:10px;font-weight:750;letter-spacing:.15px}
+.kiosk-service-chips i{width:4px;height:4px;border-radius:50%;background:#f2d24e}
+.kiosk-screen[data-step="welcome"] .kiosk-start{width:min(100%,300px);min-height:53px;border-color:#ffe275;background:#f5d64e;box-shadow:0 8px 18px rgba(16,60,57,.25);color:#174e4d;font-size:13px}
+.kiosk-screen[data-step="welcome"] .kiosk-start:hover{background:#ffe578;box-shadow:0 10px 22px rgba(16,60,57,.3)}
+.kiosk-screen[data-step="welcome"] .kiosk-demo-note{margin-top:13px;color:#d5e8df;font-size:9px}
+.kiosk-screen[data-step="welcome"] .kiosk-demo-note span{background:#f4d34c}
+.kiosk-screen:not([data-step="welcome"]) .kiosk-screen-brand{height:38px;flex-basis:38px;background:#f2f6f1}
+.kiosk-screen:not([data-step="welcome"]) .kiosk-screen-content{padding-top:clamp(14px,2.6vh,24px);padding-bottom:clamp(14px,2.6vh,24px)}
+.kiosk-service-card{min-height:172px;border-color:#d7e5dc;border-radius:15px;background:linear-gradient(145deg,#fff,#f7faf5)}
+.kiosk-service-card strong{color:#25464a;font-size:16px}
+.kiosk-service-card b{color:#26766d}
+.kiosk-step-header{padding-bottom:11px;border-bottom:1px solid #e8eee8}
+.kiosk-field{min-height:58px;padding:10px 13px;border-radius:11px}
+.kiosk-keypad button{height:40px;border-radius:9px;box-shadow:0 1px 2px rgba(29,58,49,.04)}
+.kiosk-primary,.kiosk-secondary{min-height:46px;border-radius:11px}
+@media(max-width:700px){.kiosk-screen[data-step="welcome"] .kiosk-screen-content{padding:16px}.kiosk-screen[data-step="welcome"] .kiosk-welcome h1{font-size:clamp(28px,8vw,36px)}.kiosk-screen[data-step="welcome"] .kiosk-copy{max-width:290px}.kiosk-hero-symbol{width:52px;height:52px;margin-bottom:12px}.kiosk-service-card{min-height:150px}.kiosk-screen:not([data-step="welcome"]) .kiosk-screen-content{padding-top:16px;padding-bottom:16px}}
+@media(prefers-reduced-motion:reduce){.kiosk-screen[data-step="welcome"] .kiosk-screen-content{animation:none}}

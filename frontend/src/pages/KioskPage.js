@@ -138,12 +138,13 @@ export default function KioskPage() {
 
   const renderStep = () => {
     if (step === 'welcome') return <div className="kiosk-welcome">
-      <div className="kiosk-step-icon"><Icon name="bolt" size={26}/></div>
+      <div className="kiosk-hero-symbol" aria-hidden="true">₱</div>
       <p className="kiosk-overline">WELCOME TO PESOPAL</p>
-      <h1>Tap to Transact</h1>
-      <p className="kiosk-copy">Quick, simple payments for your everyday needs.</p>
+      <h1>Everyday payments,<br/>made easy.</h1>
+      <p className="kiosk-copy">Cash in or pay a bill in just a few simple steps.</p>
+      <div className="kiosk-service-chips" aria-label="Available services"><span>Cash In</span><i/><span>Pay a Bill</span></div>
       <button className="kiosk-primary kiosk-start" onClick={() => setStep('services')}>Tap to Transact <Icon name="arrow" size={19}/></button>
-      <p className="kiosk-demo-note"><span/> Demo kiosk · Sample transactions only</p>
+      <p className="kiosk-demo-note"><span/> Sample transactions · No real payment</p>
     </div>;
 
     if (step === 'services') return <div className="kiosk-flow">
@@ -201,7 +202,7 @@ export default function KioskPage() {
   return <main className="kiosk-page">
     <section className="kiosk-cabinet" aria-label="PesoPal transaction kiosk">
       <div className="kiosk-cabinet-header"><span className="kiosk-brand-symbol"><Icon name="bolt" size={21}/></span><div><strong>PesoPal</strong><small>PAYMENTS MADE SIMPLE</small></div><span className="kiosk-status-light" aria-label="Kiosk ready"/></div>
-      <div className="kiosk-screen-frame"><div className="kiosk-screen"><div className="kiosk-screen-brand"><span><span className="screen-brand-dot"/> PESOPAL</span><small>SECURE PAYMENT TERMINAL</small></div><div className="kiosk-screen-content" key={step}>{renderStep()}</div></div></div>
+      <div className="kiosk-screen-frame"><div className="kiosk-screen" data-step={step}><div className="kiosk-screen-brand"><span><span className="screen-brand-dot"/> PESOPAL</span><small>{step === 'welcome' ? 'YOUR LOCAL PAYMENT POINT' : 'SECURE PAYMENT TERMINAL'}</small></div><div className="kiosk-screen-content" key={step}>{renderStep()}</div></div></div>
       <div className="kiosk-hardware-row">
         <div className="kiosk-receipt-hardware"><span className="hardware-label">RECEIPT</span><div className="receipt-slot"><span/></div>{receiptPrinted && <div className="receipt-paper" aria-label="Printed transaction receipt"><b>PESOPAL</b><span>TRANSACTION RECEIPT</span><i>{details?.label}</i><i>{formatPeso(amountValue)}</i><small>{transactionId}</small><small>THANK YOU!</small></div>}</div>
         <div className={`kiosk-acceptor ${canInsert ? 'acceptor-active' : ''}`}>
