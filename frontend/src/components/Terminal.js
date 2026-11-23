@@ -108,7 +108,7 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   };
 
   return <section className="terminal-card" aria-label="Simulated terminal">
-    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><button className="terminal-clear" type="button" onClick={clearTerminal} disabled={busy || loginScreen || passwordPrompt} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span></div>
+    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><div className="terminal-actions"><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span><button className="terminal-clear" type="button" onClick={clearTerminal} disabled={busy || loginScreen || passwordPrompt} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button></div></div>
     <div className="terminal-output" ref={outputRef} onClick={() => inputRef.current?.focus()} aria-live="polite">
       {lastClear < 0 && loginScreen && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host} tty1</pre>
