@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
 import Terminal from '../components/Terminal';
+import WorkspaceLoadingIllustration from '../components/WorkspaceLoadingIllustration';
 import { terminalApi } from '../services/terminalApi';
 import './TerminalPage.css';
 
@@ -76,7 +77,7 @@ export default function TerminalPage() {
   };
 
   if (loadError) return <main className="terminal-page page-shell"><div className="terminal-page-error" role="alert"><b>Terminal workspace unavailable</b><span>{loadError}</span><button onClick={() => window.location.reload()}>Retry</button></div></main>;
-  if (!attempt) return <main className="terminal-page page-shell"><div className="terminal-page-loading"><span className="terminal-page-spinner"/>Preparing the Ubuntu practice workspace…</div></main>;
+  if (!attempt) return <main className="terminal-page page-shell"><div className="terminal-page-loading" style={{ flex: '1 1 auto', minHeight: 0, width: '100%' }}><WorkspaceLoadingIllustration style={{ width: 'min(100%, 190px)', margin: '0 0 2px', filter: 'drop-shadow(0 9px 12px rgba(23,48,58,.12))' }}/><span>Preparing the Ubuntu practice workspace…</span></div></main>;
 
   return <main className="terminal-page page-shell">
     <div className="free-terminal-workspace">
