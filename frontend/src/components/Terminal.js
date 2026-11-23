@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from './Icon';
 import './Terminal.css';
 
-const shellCommands = 'pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor whoami id ssh exit chmod chgrp chown sudo ip getent ss uname date which tree file du man less more clear history help psql tar scp sha256sum bash crontab training-clock docker ddev lp lpstat lpadmin lpinfo cancel'.split(' ');
+const shellCommands = 'pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor whoami id ssh exit chmod chgrp chown sudo adduser su passwd logout ip getent ss uname date which tree file du man less more clear history help psql tar scp sha256sum bash crontab training-clock docker ddev lp lpstat lpadmin lpinfo cancel'.split(' ');
 
-function completeInput(value, files, cwd, user) {
+function completeInput(value, files, cwd, user, disablePrinterCommands = false) {
   const match = value.match(/^(.*?)([^\s]*)$/);
   if (!match) return value;
   const [, prefix, fragment] = match;
   if (!prefix) {
-    const matches = shellCommands.filter((command) => command.startsWith(fragment));
+    const availableCommands = disablePrinterCommands ? shellCommands.filter((command) => !['lp', 'lpstat', 'lpadmin', 'lpinfo', 'cancel'].includes(command)) : shellCommands;
+    const matches = availableCommands.filter((command) => command.startsWith(fragment));
     return matches.length === 1 ? `${matches[0]} ` : value;
   }
 
@@ -34,7 +35,7 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   const outputRef = useRef(null);
   const commands = useMemo(() => attempt.commands || [], [attempt.commands]);
   const commandList = useMemo(() => commands.map((entry) => entry.command), [commands]);
-  const lastClear = commandList.lastIndexOf('clear');
+  const lastClear = Math.max(commandList.lastIndexOf('clear'), commandList.lastIndexOf('logout'));
   const visibleCommands = commands.slice(lastClear < 0 ? 0 : lastClear + 1);
   const cwd = attempt.state.cwd;
   const user = attempt.state.user || 'learner';
@@ -42,6 +43,9 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   const homePath = `/home/${user}`;
   const label = cwd === homePath ? '~' : cwd.replace(homePath, '~');
   const databaseSession = attempt.state.databaseSession;
+  const interactivePrompt = attempt.state.interactivePrompt;
+  const passwordPrompt = interactivePrompt?.kind === 'password';
+  const loginScreen = Boolean(attempt.state.loginScreen);
 
   useEffect(() => {
     if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -64,6 +68,13 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
     await onCommand(command);
   };
 
+  const clearTerminal = () => {
+    if (busy || loginScreen || passwordPrompt) return;
+    setValue('');
+    onCommand('clear');
+    inputRef.current?.focus();
+  };
+
   const keyDown = (event) => {
     if (event.ctrlKey && event.key.toLowerCase() === 'l') {
       event.preventDefault();
@@ -74,11 +85,12 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
     if (event.ctrlKey && event.key.toLowerCase() === 'c') {
       event.preventDefault();
       setValue('');
+      if (passwordPrompt) onCommand('cancel');
       return;
     }
     if (event.key === 'Tab') {
       event.preventDefault();
-      setValue((current) => completeInput(current, attempt.state.files, cwd, user));
+      setValue((current) => completeInput(current, attempt.state.files, cwd, user, attempt.state.disablePrinterCommands));
       return;
     }
     if (event.key === 'ArrowUp') {
@@ -96,9 +108,14 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   };
 
   return <section className="terminal-card" aria-label="Simulated terminal">
-    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> Terminal · {user}@{host}:{label}</div><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span></div>
+    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><button className="terminal-clear" type="button" onClick={clearTerminal} disabled={busy || loginScreen || passwordPrompt} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span></div>
     <div className="terminal-output" ref={outputRef} onClick={() => inputRef.current?.focus()} aria-live="polite">
-      {lastClear < 0 && <div className="ubuntu-login">
+      {lastClear < 0 && loginScreen && <div className="ubuntu-login">
+        <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host} tty1</pre>
+        <pre className="term-line ubuntu-login-line">LinuxLab computer is logged out.</pre>
+        <pre className="term-line startup-tip">Available accounts: <b>{Object.keys(attempt.state.users || {}).join(', ')}</b></pre>
+      </div>}
+      {lastClear < 0 && !loginScreen && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host}</pre>
         <pre className="term-line ubuntu-login-line">{attempt.state.remoteSession ? `SSH session for ${user}@${host}` : `Local training session for ${user}@${host}`}</pre>
         <pre className="term-line ubuntu-welcome">Welcome to Ubuntu 24.04.2 LTS.</pre>
@@ -106,11 +123,11 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
         <pre className="term-line startup-tip">Start with <b>pwd</b> to see where you are, <b>ls</b> to look around, or type <b>help</b>.</pre>
       </div>}
       {visibleCommands.map((entry) => <div key={entry.id}>
-        <pre className="term-line command"><span className="prompt-user">{entry.userBefore || user}</span>@<span className="prompt-host">{entry.hostBefore || 'learnbox'}</span>:<span className="prompt-path">{(entry.cwdBefore || entry.cwd || homePath) === `/home/${entry.userBefore || user}` ? '~' : (entry.cwdBefore || entry.cwd || homePath).replace(`/home/${entry.userBefore || user}`, '~')}</span>$ {entry.command}</pre>
+        <pre className="term-line command">{entry.loginInput ? <>learnbox login: {entry.command}</> : entry.passwordInput ? <>Password:</> : <><span className="prompt-user">{entry.userBefore || user}</span>@<span className="prompt-host">{entry.hostBefore || 'learnbox'}</span>:<span className="prompt-path">{(entry.cwdBefore || entry.cwd || homePath) === `/home/${entry.userBefore || user}` ? '~' : (entry.cwdBefore || entry.cwd || homePath).replace(`/home/${entry.userBefore || user}`, '~')}</span>$ {entry.command}</>}</pre>
         {(entry.stdout ?? (entry.succeeded ? entry.output : '')) && <pre className="term-line output">{entry.stdout ?? entry.output}</pre>}
         {(entry.stderr ?? (!entry.succeeded ? entry.output : '')) && <pre className="term-line error">{entry.stderr ?? entry.output}</pre>}
       </div>)}
-      <form className="terminal-form" onSubmit={submit}><span className="prompt">{databaseSession ? <><b>{databaseSession.database}</b><em>=&gt;</em></> : <><b>{user}</b>@<strong>{host}</strong>:<em>{label}</em>$</>}</span><input ref={inputRef} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={keyDown} aria-label="Terminal command" placeholder={commandList.length ? '' : databaseSession ? 'enter SQL or \\q' : 'try pwd'} autoComplete="off" spellCheck="false" disabled={busy}/><button type="submit" aria-label="Run command" disabled={busy}><Icon name="arrow" size={17}/></button></form>
+      <form className="terminal-form" onSubmit={submit}><span className="prompt">{passwordPrompt ? <><b>{interactivePrompt.operation === 'sudo-adduser' ? `[sudo] password for ${interactivePrompt.username}` : interactivePrompt.operation === 'su' || interactivePrompt.operation === 'login' ? `Password for ${interactivePrompt.username}` : interactivePrompt.step === 'confirm' ? 'Retype new password' : 'New password'}:</b></> : loginScreen ? <><b>learnbox login:</b></> : databaseSession ? <><b>{databaseSession.database}</b><em>=&gt;</em></> : <><b>{user}</b>@<strong>{host}</strong>:<em>{label}</em>$</>}</span><input ref={inputRef} type={passwordPrompt ? 'password' : 'text'} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={keyDown} aria-label={passwordPrompt ? 'Password input' : loginScreen ? 'Account username' : 'Terminal command'} placeholder={passwordPrompt ? 'password input is hidden' : loginScreen ? 'enter account name' : commandList.length ? '' : databaseSession ? 'enter SQL or \\q' : 'try pwd'} autoComplete="off" spellCheck="false" disabled={busy}/><button type="submit" aria-label={passwordPrompt ? 'Submit password' : loginScreen ? 'Submit account name' : 'Run command'} disabled={busy}><Icon name="arrow" size={17}/></button></form>
     </div>
     <div className="terminal-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> history <kbd>Tab</kbd> complete <kbd>Ctrl</kbd>+<kbd>L</kbd> clear</span><span>{requestError ? <span className="term-error">{requestError}</span> : 'Safe Ubuntu-style shell simulation'}</span></div>
   </section>;

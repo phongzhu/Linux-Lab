@@ -4,6 +4,10 @@
 .terminal-top { position: relative; display: flex; height: 44px; flex: 0 0 44px; align-items: center; padding: 0 14px; border-bottom: 1px solid #4a3b4c; background: #302632; }
 .terminal-title { position: absolute; left: 50%; display: flex; align-items: center; gap: 7px; transform: translateX(-50%); color: #e4dbe8; font: 10px var(--mono); white-space: nowrap; }
 .terminal-title svg { color: #e95420; }
+.terminal-clear { display: inline-flex; height: 25px; flex: 0 0 auto; align-items: center; gap: 5px; margin-left: 10px; padding: 0 7px; border: 1px solid #57485a; border-radius: 6px; background: #382d3d; color: #d8cbdc; cursor: pointer; font: 9px var(--mono); transition: border-color .15s,background .15s,color .15s; }
+.terminal-clear:hover:not(:disabled) { border-color: #8c727f; background: #493b4d; color: #fff; }
+.terminal-clear:focus-visible { outline: 2px solid #c8dbd7; outline-offset: 2px; }
+.terminal-clear:disabled { cursor: not-allowed; opacity: .45; }
 .sandbox-pill { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 5px 8px; border: 1px solid #5a4b5d; border-radius: 20px; color: #d8cbdc; font-size: 9px; white-space: nowrap; }
 .sandbox-pill span { width: 6px; height: 6px; border-radius: 50%; background: #e95420; }
 .terminal-output { height: 350px; min-height: 0; flex: 1 1 auto; overflow-y: auto; padding: 16px 17px 8px; background: #1e1822; color: #e7e0e9; cursor: text; font: 12px/1.65 var(--mono); scrollbar-color: #5b4c5e #241c28; scrollbar-width: thin; }
@@ -33,6 +37,7 @@ body .terminal-card .terminal-form input:focus-visible { outline: none; box-shad
 .terminal-form button { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border: 1px solid #625366; border-radius: 6px; background: #382d3d; color: #eadfeb; cursor: pointer; transition: background .15s, border-color .15s; }
 .terminal-form button:hover:not(:disabled) { border-color: #e95420; background: #493641; }
 .terminal-form button:disabled { opacity: .55; }
+@media (max-width: 500px) { .terminal-clear { gap: 0; padding: 0 6px; } .terminal-clear span { display: none; } }
 .terminal-foot { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 13px; border-top: 1px solid #493b4b; background: #29212e; color: #b8aebe; font-size: 9px; }
 .terminal-foot kbd { padding: 2px 5px; border-radius: 4px; background: #453849; color: #eee5ef; font: 9px var(--mono); }
 .term-error { max-width: 58%; overflow: hidden; color: #ff9388; text-overflow: ellipsis; white-space: nowrap; }
