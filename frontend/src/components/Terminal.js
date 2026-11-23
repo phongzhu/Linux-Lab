@@ -31,12 +31,13 @@ function completeInput(value, files, cwd, user, disablePrinterCommands = false) 
 export default function Terminal({ attempt, busy, requestError, onCommand }) {
   const [value, setValue] = useState('');
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [displayStart, setDisplayStart] = useState(0);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
   const commands = useMemo(() => attempt.commands || [], [attempt.commands]);
   const commandList = useMemo(() => commands.map((entry) => entry.command), [commands]);
   const lastClear = Math.max(commandList.lastIndexOf('clear'), commandList.lastIndexOf('logout'));
-  const visibleCommands = commands.slice(lastClear < 0 ? 0 : lastClear + 1);
+  const visibleCommands = commands.slice(Math.max(displayStart, lastClear + 1));
   const cwd = attempt.state.cwd;
   const user = attempt.state.user || 'learner';
   const host = attempt.state.host || 'learnbox';
@@ -69,9 +70,8 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   };
 
   const clearTerminal = () => {
-    if (busy || loginScreen || passwordPrompt) return;
     setValue('');
-    onCommand('clear');
+    setDisplayStart(commands.length);
     inputRef.current?.focus();
   };
 
@@ -108,14 +108,14 @@ export default function Terminal({ attempt, busy, requestError, onCommand }) {
   };
 
   return <section className="terminal-card" aria-label="Simulated terminal">
-    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><div className="terminal-actions"><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span><button className="terminal-clear" type="button" onClick={clearTerminal} disabled={busy || loginScreen || passwordPrompt} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button></div></div>
+    <div className="terminal-top"><div className="window-dots"><i/><i/><i/></div><div className="terminal-title"><Icon name="terminal" size={15}/> {loginScreen ? 'System login' : `Terminal - ${user}@${host}:${label}`} </div><div className="terminal-actions"><span className="sandbox-pill"><span/> Ubuntu 24.04 · simulated</span><button className="terminal-clear" type="button" onClick={clearTerminal} aria-label="Clear terminal output" title="Clear terminal output"><Icon name="clear" size={13}/><span>Clear</span></button></div></div>
     <div className="terminal-output" ref={outputRef} onClick={() => inputRef.current?.focus()} aria-live="polite">
-      {lastClear < 0 && loginScreen && <div className="ubuntu-login">
+      {displayStart === 0 && lastClear < 0 && loginScreen && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host} tty1</pre>
         <pre className="term-line ubuntu-login-line">LinuxLab computer is logged out.</pre>
         <pre className="term-line startup-tip">Available accounts: <b>{Object.keys(attempt.state.users || {}).join(', ')}</b></pre>
       </div>}
-      {lastClear < 0 && !loginScreen && <div className="ubuntu-login">
+      {displayStart === 0 && lastClear < 0 && !loginScreen && <div className="ubuntu-login">
         <pre className="term-line ubuntu-release">Ubuntu 24.04.2 LTS · {host}</pre>
         <pre className="term-line ubuntu-login-line">{attempt.state.remoteSession ? `SSH session for ${user}@${host}` : `Local training session for ${user}@${host}`}</pre>
         <pre className="term-line ubuntu-welcome">Welcome to Ubuntu 24.04.2 LTS.</pre>
