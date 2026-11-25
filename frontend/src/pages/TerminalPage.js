@@ -125,6 +125,7 @@ export default function TerminalPage() {
     event.preventDefault();
     if (!selectedLogin || !loginPassword || busy) return;
     const settingInitialPassword = attempt?.state?.interactivePrompt?.operation === 'initial-password';
+    const recoveringPassword = attempt?.state?.interactivePrompt?.operation === 'account-recovery';
     const result = await runCommand(loginPassword);
     setLoginPassword('');
     if (settingInitialPassword) {
@@ -139,6 +140,18 @@ export default function TerminalPage() {
       } else {
         setSelectedLogin('');
         setLoginError('The password could not be set. Please try again.');
+      }
+      return;
+    }
+    if (recoveringPassword) {
+      if (!result) return;
+      if (result.state.interactivePrompt?.operation === 'account-recovery') {
+        setLoginError(result.entry.exitCode === 0 ? '' : result.entry.stderr || result.entry.stdout || 'The passwords did not match. Try again.');
+      } else if (result.entry.exitCode === 0) {
+        setLoginError('');
+        setLoginNotice('Admin password reset. Sign in with the new password.');
+      } else {
+        setLoginError(result.entry.stderr || result.entry.stdout || 'Password recovery failed. Try again.');
       }
       return;
     }
@@ -212,7 +225,7 @@ export default function TerminalPage() {
               <div className="login-logo"><span>●</span><small>UBUNTU 24.04</small></div>
               <h1>{selectedLogin ? `Welcome, ${selectedLogin}` : 'Sign in'}</h1>
               <p>{selectedLogin ? 'Enter your password to continue.' : 'Choose an account to use this computer.'}</p>
-              {!selectedLogin ? <div className="login-account-list">{Object.entries(attempt.state.users || {}).map(([username]) => <button key={username} onClick={() => selectLoginAccount(username)} disabled={busy}><span className="login-avatar">{username.slice(0, 1).toUpperCase()}</span><span><b>{username}</b><small>{attempt.state.adminUsers?.includes(username) ? 'Administrator account' : 'Standard account'}</small></span><Icon name="arrow" size={16}/></button>)}</div> : (() => { const setupPrompt = attempt.state.interactivePrompt?.operation === 'initial-password'; const confirmSetup = setupPrompt && attempt.state.interactivePrompt.step === 'confirm'; return <form className="login-password-form" onSubmit={submitLogin}><span className="login-selected-user"><span className="login-avatar">{selectedLogin.slice(0, 1).toUpperCase()}</span><b>{selectedLogin}</b></span><label htmlFor="computer-login-password">{setupPrompt ? confirmSetup ? 'Confirm administrator password' : 'Create administrator password' : 'Password'}</label><input id="computer-login-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete={setupPrompt ? 'new-password' : 'current-password'} autoFocus/><div><button type="button" onClick={() => { setSelectedLogin(''); setLoginPassword(''); setLoginError(''); if (attempt.state.interactivePrompt) runCommand('cancel'); }}>Back</button><button type="submit" disabled={busy || !loginPassword}>{setupPrompt ? confirmSetup ? 'Set password' : 'Continue' : 'Sign in'}</button></div></form>; })()}
+              {!selectedLogin ? <div className="login-account-list">{Object.entries(attempt.state.users || {}).map(([username]) => <button key={username} onClick={() => selectLoginAccount(username)} disabled={busy}><span className="login-avatar">{username.slice(0, 1).toUpperCase()}</span><span><b>{username}</b><small>{attempt.state.adminUsers?.includes(username) ? 'Administrator account' : 'Standard account'}</small></span><Icon name="arrow" size={16}/></button>)}</div> : (() => { const setupPrompt = attempt.state.interactivePrompt?.operation === 'initial-password'; const recoveryPrompt = attempt.state.interactivePrompt?.operation === 'account-recovery'; const confirmSetup = (setupPrompt || recoveryPrompt) && attempt.state.interactivePrompt.step === 'confirm'; return <form className="login-password-form" onSubmit={submitLogin}><span className="login-selected-user"><span className="login-avatar">{selectedLogin.slice(0, 1).toUpperCase()}</span><b>{selectedLogin}</b></span><label htmlFor="computer-login-password">{setupPrompt || recoveryPrompt ? confirmSetup ? 'Confirm new password' : 'Create a new password' : 'Password'}</label><input id="computer-login-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} autoComplete={setupPrompt || recoveryPrompt ? 'new-password' : 'current-password'} autoFocus/><div><button type="button" onClick={() => { setSelectedLogin(''); setLoginPassword(''); setLoginError(''); if (attempt.state.interactivePrompt) runCommand('cancel'); }}>Back</button><button type="submit" disabled={busy || !loginPassword}>{setupPrompt || recoveryPrompt ? confirmSetup ? 'Set password' : 'Continue' : 'Sign in'}</button></div>{selectedLogin === 'admin' && !setupPrompt && !recoveryPrompt && <button className="login-recovery-button" type="button" disabled={busy} onClick={async () => { setLoginPassword(''); setLoginError(''); setLoginNotice(''); if (attempt.state.interactivePrompt) await runCommand('cancel'); const result = await runCommand('recovery admin'); if (result?.state.interactivePrompt?.operation !== 'account-recovery') setLoginError(result?.entry?.stderr || result?.entry?.stdout || 'Could not start admin recovery.'); }}>Reset admin password</button>}</form>; })()}
               {loginError && <p className="login-error" role="alert">{loginError}</p>}
               {loginNotice && <p className="login-notice" role="status">{loginNotice}</p>}
               <small className="login-host">{attempt.state.host || 'learnbox'} · LinuxLab training computer</small>

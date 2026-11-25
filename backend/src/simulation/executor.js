@@ -751,6 +751,15 @@ export function executeCommand(env, raw, history = []) {
   const command = String(raw ?? '').trim();
   if (env.initialSetup && !env.interactivePrompt) return commandResult(env, '', 'First-run admin setup is unavailable. Reload the computer to restart setup.', 1, cwdBefore);
   if (env.loginScreen && !env.interactivePrompt) {
+    const recovery = command.match(/^recovery\s+([a-z_][a-z0-9_-]{0,31})$/);
+    if (recovery) {
+      const username = recovery[1];
+      if (!env.adminUsers?.includes(username) || !env.users?.[username]) {
+        return commandResult(env, '', 'Recovery mode is available only for an administrator account on this computer.', 1, cwdBefore);
+      }
+      env.interactivePrompt = { kind: 'password', operation: 'account-recovery', username, step: 'new' };
+      return commandResult(env, `Ubuntu recovery mode: set a new password for ${username}.`, '', 0, cwdBefore);
+    }
     const username = command;
     const account = env.users?.[username];
     if (!username || !account) return commandResult(env, '', 'Login incorrect. Enter an account name to try again:', 1, cwdBefore, { loginInput: true });
@@ -773,13 +782,13 @@ export function executeCommand(env, raw, history = []) {
       return commandResult(env, '^C\nPassword operation canceled.', '', 130, cwdBefore);
     }
     const prompt = env.interactivePrompt;
-    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password'].includes(prompt.operation) && prompt.step === 'new') {
+    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password', 'account-recovery'].includes(prompt.operation) && prompt.step === 'new') {
       if (command.length < 8 || command.length > 128) return commandResult(env, '', 'Password must be at least 8 characters and no more than 128 characters. Try again:', 1, cwdBefore, { secretInput: true });
       const salt = randomBytes(16).toString('hex');
       env.interactivePrompt = { ...prompt, step: 'confirm', passwordSalt: salt, passwordHash: scryptSync(command, salt, 32).toString('hex') };
       return commandResult(env, '', 'Retype the new password:', 0, cwdBefore, { secretInput: true });
     }
-    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password'].includes(prompt.operation) && prompt.step === 'confirm') {
+    if (['adduser', 'passwd', 'initial-password', 'first-user-password', 'first-admin-password', 'account-recovery'].includes(prompt.operation) && prompt.step === 'confirm') {
       const actual = Buffer.from(scryptSync(command, prompt.passwordSalt, 32).toString('hex'), 'hex');
       const expected = Buffer.from(prompt.passwordHash, 'hex');
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
@@ -787,6 +796,16 @@ export function executeCommand(env, raw, history = []) {
         return commandResult(env, '', 'Passwords do not match. Enter a new password:', 1, cwdBefore, { secretInput: true });
       }
       const username = prompt.username;
+      if (prompt.operation === 'account-recovery') {
+        if (!env.adminUsers?.includes(username) || !env.users?.[username]) {
+          delete env.interactivePrompt;
+          return commandResult(env, '', 'Recovery failed: the administrator account is unavailable.', 1, cwdBefore, { secretInput: true });
+        }
+        env.users[username].passwordSalt = prompt.passwordSalt;
+        env.users[username].passwordHash = prompt.passwordHash;
+        delete env.interactivePrompt;
+        return commandResult(env, `Administrator password reset for ${username}. Sign in with the new password.`, '', 0, cwdBefore, { secretInput: true });
+      }
       if (prompt.operation === 'passwd' || prompt.operation === 'initial-password') {
         env.users[username].passwordSalt = prompt.passwordSalt;
         env.users[username].passwordHash = prompt.passwordHash;
