@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "npm --prefix frontend start",
+    "start": "concurrently -k -n backend,frontend \"npm run dev:backend\" \"npm --prefix frontend start\"",
     "build": "npm --prefix frontend run build",
     "test": "npm run test:frontend && npm run test:backend",
     "test:backend": "npm --prefix backend test",
     "dev:backend": "npm --prefix backend run dev",
     "test:frontend": "npm --prefix frontend test -- --watchAll=false"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
   }
 }

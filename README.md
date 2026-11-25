@@ -5,18 +5,13 @@ A beginner friendly Linux command simulator with a React frontend and an Express
 ## Install and run
 
 ```sh
+npm install
 npm --prefix frontend install
 npm --prefix backend install
 npm start
 ```
 
-In a second terminal, start the API:
-
-```sh
-npm run dev:backend
-```
-
-The root `npm start` command delegates to the React app in `frontend/`. Its development proxy forwards `/api` requests to `http://localhost:4000` so the browser session cookie works across the API calls.
+The root `npm start` command starts both the Express API and React app. The frontend development proxy forwards `/api` requests to `http://localhost:4000` so the browser session cookie works across the API calls. Press Ctrl+C to stop both.
 
 ## Supabase configuration
 

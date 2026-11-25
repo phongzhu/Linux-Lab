@@ -161,9 +161,33 @@ export async function submitCommand(accessToken, userId, attemptId, command) {
     p_completed_tasks: completedTasks,
     p_complete_lesson: completeLesson,
   });
-  const [saved, commands] = await Promise.all([
-    getAttempt(client, attemptId, userId), listCommands(client, attemptId, userId),
-  ]);
+  // The RPC atomically saves the attempt and command. Build the response from
+  // the values already in memory instead of issuing two more database reads
+  // before the terminal can display the result.
+  const createdAt = new Date().toISOString();
+  const commandEntry = {
+    id: `pending-${createdAt}`,
+    command,
+    cwdBefore: result.cwdBefore,
+    cwdAfter: result.cwdAfter,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode,
+    hostBefore: result.hostBefore,
+    hostAfter: result.hostAfter,
+    userBefore: result.userBefore,
+    userAfter: result.userAfter,
+    output: result.stdout || result.stderr,
+    succeeded: result.exitCode === 0,
+    createdAt,
+  };
+  const savedAttempt = {
+    ...attemptRow,
+    state: attemptState,
+    completed_tasks: completedTasks,
+    status: completeLesson ? 'completed' : attemptRow.status,
+    updated_at: createdAt,
+  };
   return {
     stdout: result.stdout,
     stderr: result.stderr,
@@ -171,7 +195,7 @@ export async function submitCommand(accessToken, userId, attemptId, command) {
     output: result.stdout || result.stderr,
     error: result.exitCode !== 0,
     cwd: attemptState.cwd,
-    attempt: presentAttempt(saved, commands),
+    attempt: presentAttempt(savedAttempt, [...previousCommands, commandEntry]),
     completedTasks,
     lessonComplete: completeLesson,
     awardedXp: rpc?.awarded_xp || 0,

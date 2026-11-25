@@ -30,6 +30,7 @@ function completeInput(value, files, cwd, user, disablePrinterCommands = false) 
 
 export default function Terminal({ attempt, busy, requestError, onCommand, bootProgress = 100 }) {
   const [value, setValue] = useState('');
+  const [pendingCommand, setPendingCommand] = useState('');
   const [historyIndex, setHistoryIndex] = useState(0);
   const [displayStart, setDisplayStart] = useState(0);
   const inputRef = useRef(null);
@@ -68,7 +69,12 @@ export default function Terminal({ attempt, busy, requestError, onCommand, bootP
     if (!command || busy) return;
     setValue('');
     setHistoryIndex(commandList.length);
-    await onCommand(command);
+    setPendingCommand(command);
+    try {
+      await onCommand(command);
+    } finally {
+      setPendingCommand('');
+    }
   };
 
   const clearTerminal = () => {
@@ -133,11 +139,15 @@ export default function Terminal({ attempt, busy, requestError, onCommand, bootP
         <pre className="term-line notice">LinuxLab training shell · commands run in a fictional sandbox.</pre>
         <pre className="term-line startup-tip">Start with <b>pwd</b> to see where you are, <b>ls</b> to look around, or type <b>help</b>.</pre>
       </div>}
-      {visibleCommands.map((entry) => <div key={entry.id}>
+      {visibleCommands.map((entry) => <div className="terminal-command-group" key={entry.id}>
         <pre className="term-line command">{entry.firstBootUsername ? <>Enter new UNIX username: {entry.command}</> : entry.loginInput ? <>learnbox login: {entry.command}</> : entry.passwordInput ? <>Password:</> : <><span className="prompt-user">{entry.userBefore || user}</span>@<span className="prompt-host">{entry.hostBefore || 'learnbox'}</span>:<span className="prompt-path">{(entry.cwdBefore || entry.cwd || homePath) === `/home/${entry.userBefore || user}` ? '~' : (entry.cwdBefore || entry.cwd || homePath).replace(`/home/${entry.userBefore || user}`, '~')}</span>$ {entry.command}</>}</pre>
         {(entry.stdout ?? (entry.succeeded ? entry.output : '')) && <pre className="term-line output">{entry.stdout ?? entry.output}</pre>}
         {(entry.stderr ?? (!entry.succeeded ? entry.output : '')) && <pre className="term-line error">{entry.stderr ?? entry.output}</pre>}
       </div>)}
+      {pendingCommand && <div className="terminal-command-group terminal-command-pending" aria-live="polite">
+        <pre className="term-line command"><span className="prompt-user">{user}</span>@<span className="prompt-host">{host}</span>:<span className="prompt-path">{label}</span>$ {pendingCommand}</pre>
+        <pre className="term-line notice">Running…</pre>
+      </div>}
       <form className="terminal-form" style={initialSetup && !bootReady ? { visibility: 'hidden' } : undefined} onSubmit={submit}><span className="prompt">{passwordPrompt ? <><b>{interactivePrompt.operation === 'sudo-adduser' ? `Admin sign-in password for ${interactivePrompt.username}` : interactivePrompt.operation === 'su' || interactivePrompt.operation === 'login' ? `Password for ${interactivePrompt.username}` : interactivePrompt.step === 'confirm' ? 'Retype new password' : interactivePrompt.operation === 'first-admin-password' ? 'New password for admin' : 'New password'}:</b></> : initialSetup ? <><b>New password for admin:</b></> : loginScreen ? <><b>learnbox login:</b></> : databaseSession ? <><b>{databaseSession.database}</b><em>=&gt;</em></> : <><b>{user}</b>@<strong>{host}</strong>:<em>{label}</em>$</>}</span><input ref={inputRef} type={passwordPrompt || initialSetup ? 'password' : 'text'} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={keyDown} aria-label={passwordPrompt || initialSetup ? 'Password input' : loginScreen ? 'Account username' : 'Terminal command'} placeholder={passwordPrompt || initialSetup ? 'password input is hidden' : loginScreen ? 'enter account name' : commandList.length ? '' : databaseSession ? 'enter SQL or \\q' : 'try pwd'} autoComplete="off" spellCheck="false" disabled={busy || (initialSetup && !bootReady)}/><button type="submit" aria-label={passwordPrompt ? 'Submit password' : loginScreen ? 'Submit account name' : 'Run command'} disabled={busy || (initialSetup && !bootReady)}><Icon name="arrow" size={17}/></button></form>
       {passwordPrompt && interactivePrompt.operation === 'sudo-adduser' && interactivePrompt.attempts > 0 && <div className="terminal-prompt-hint" role="alert">That admin password was not accepted. Use the same password you entered to sign in. {3 - interactivePrompt.attempts} attempt{3 - interactivePrompt.attempts === 1 ? '' : 's'} remaining.</div>}
     </div>
