@@ -338,7 +338,7 @@ function runOne(env, tokens, input = '') {
     }
     case 'uname': return ok(args.includes('-a') ? `Linux ${env.host} 6.8.0-training-generic #1-Ubuntu SMP PREEMPT_DYNAMIC x86_64 GNU/Linux` : args.includes('-r') ? '6.8.0-training-generic' : 'Linux');
     case 'date': return ok('Sat Apr 12 09:08:18 UTC 2025');
-    case 'which': { if (!args.length) return fail('which: missing command name'); const available = new Set('pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor whoami id hostname ssh exit chmod chgrp chown sudo ip getent ss openssl waf uname date which tree file du man less more clear history help'.split(' ')); return ok(args.map((name) => available.has(name) ? `/usr/bin/${name}` : '').filter(Boolean).join('\n')); }
+    case 'which': { if (!args.length) return fail('which: missing command name'); const available = new Set('pwd ls cd mkdir touch cat echo printf head tail grep find wc sort uniq cp mv rm ps top df free systemctl journalctl curl jq editor vim vi whoami id hostname ssh exit chmod chgrp chown sudo ip getent ss openssl waf uname date which tree file du man less more clear history help'.split(' ')); return ok(args.map((name) => available.has(name) ? `/usr/bin/${name}` : '').filter(Boolean).join('\n')); }
     case 'file': { if (!args.length) return fail('file: missing operand'); return args.map((name) => { const path = resolvePath(name, env.cwd, env.user); const node = env.files[path]; return node ? `${name}: ${node.type === 'dir' ? 'directory' : /\.json$/i.test(name) ? 'JSON text data' : 'ASCII text'}` : `file: ${name}: cannot open (No such file)`; }).join('\n').includes('cannot open') ? fail(`file: cannot open '${args.find((name) => !env.files[resolvePath(name, env.cwd, env.user)])}'`) : ok(args.map((name) => { const path = resolvePath(name, env.cwd, env.user); const node = env.files[path]; return `${name}: ${node.type === 'dir' ? 'directory' : /\.json$/i.test(name) ? 'JSON text data' : 'ASCII text'}`; }).join('\n')); }
     case 'man': case 'less': case 'more': { const name = args.find((item) => !item.startsWith('-')); if (!name) return fail(`${cmd}: missing operand`); const page = env.files[resolvePath(name, env.cwd, env.user)]; if (page?.type === 'file') return ok(page.content); if (cmd === 'man' && ['pwd', 'ls', 'cd', 'cat', 'grep', 'find', 'mkdir', 'cp', 'mv', 'rm', 'touch'].includes(name)) return ok(`${name}(1) — Ubuntu training manual\n\nNAME\n    ${name} - ${({ pwd: 'print the current working directory', ls: 'list directory contents', cd: 'change the shell working directory', cat: 'concatenate and print files', grep: 'search text using a pattern', find: 'search for files and directories', mkdir: 'create directories', cp: 'copy files', mv: 'move files', rm: 'remove files or directories', touch: 'create an empty file' })[name]}\n\nThis concise manual page is part of the LinuxLab Ubuntu simulation.`); return fail(`${cmd}: no manual or file named '${name}'`); }
     case 'tree': { const base = args.find((item) => !item.startsWith('-')) || '.'; const root = resolvePath(base, env.cwd, env.user); if (env.files[root]?.type !== 'dir') return fail(`tree: '${base}': not a directory`); const lines = [base]; const descend = (dir, prefix = '') => { const entries = children(env.files, dir).filter((path) => !path.split('/').at(-1).startsWith('.')).sort(); entries.forEach((path, index) => { const last = index === entries.length - 1; lines.push(`${prefix}${last ? '└── ' : '├── '}${path.split('/').at(-1)}${env.files[path].type === 'dir' ? '/' : ''}`); if (env.files[path].type === 'dir') descend(path, `${prefix}${last ? '    ' : '│   '}`); }); }; descend(root); return ok(`${lines.join('\n')}\n${lines.length - 1} items`); }
@@ -931,6 +931,27 @@ export function executeCommand(env, raw, history = []) {
       return commandResult(env, `Welcome to Ubuntu 24.04.2 LTS, ${prompt.username}.\nLast login: today on tty1`, '', 0, cwdBefore, { secretInput: true });
     }
   }
+  if (env.interactivePrompt?.kind === 'editor') {
+    const prompt = env.interactivePrompt;
+    const editorInput = String(raw ?? '');
+    if (command === ':q!' || command === ':qa!') {
+      delete env.interactivePrompt;
+      return commandResult(env, 'Vim: changes discarded.', '', 0, cwdBefore);
+    }
+    if (command === ':w' || command === ':wq' || command === ':x') {
+      const oldNode = env.files[prompt.path];
+      env.files[prompt.path] = {
+        ...(oldNode || {}), type: 'file', content: prompt.content,
+        owner: oldNode?.owner || env.user, group: oldNode?.group || env.user,
+        mode: oldNode?.mode || '0644', modifiedAt: '2025-04-12',
+      };
+      if (command !== ':w') delete env.interactivePrompt;
+      return commandResult(env, `"${prompt.path}" ${prompt.content.split('\n').length} lines written.`, '', 0, cwdBefore, { filesystemChanged: true });
+    }
+    if (command === ':q') return commandResult(env, 'Use :q! to discard changes, or :wq to save and quit.', '', 1, cwdBefore);
+    prompt.content += `${prompt.content ? '\n' : ''}${editorInput}`;
+    return commandResult(env, '', '', 0, cwdBefore, { editorInput: true });
+  }
   if (!command) return commandResult(env, '', '', 0, cwdBefore);
   if (command === 'clear') return commandResult(env, '', '', 0, cwdBefore, { clear: true });
   if (command === 'history') return commandResult(env, history.map((item, i) => ` ${String(i + 1).padStart(4)}  ${item}`).join('\n'), '', 0, cwdBefore);
@@ -953,6 +974,28 @@ export function executeCommand(env, raw, history = []) {
   if (/^(?:release|scale|rollout)(?:\s|$)/.test(command)) {
     const response = executeDeploymentCommand(env, command);
     return commandResult(env, response.stdout, response.stderr, response.exitCode, cwdBefore);
+  }
+
+  if (command === 'help vim' || command === 'help vi') {
+    return commandResult(env, 'vim FILE — open a practice text editor. Enter one line at a time; use :wq to save and quit, or :q! to discard.', '', 0, cwdBefore);
+  }
+  if (/^(?:vim|vi)(?:\s|$)/.test(command)) {
+    const parsed = tokenize(command);
+    if (parsed.error) return syntaxError(env, parsed.error, cwdBefore);
+    if (parsed.tokens.length !== 2 || !parsed.tokens[1] || parsed.tokens[1].startsWith('-')) {
+      return commandResult(env, '', 'usage: vim FILE (enter text one line at a time; use :wq to save and quit, or :q! to discard)', 2, cwdBefore);
+    }
+    const path = resolvePath(parsed.tokens[1], env.cwd, env.user);
+    const node = env.files[path];
+    if (node?.type === 'dir') return commandResult(env, '', `vim: '${parsed.tokens[1]}' is a directory`, 1, cwdBefore);
+    if (!canTraversePath(env, parent(path)) || !canWriteInParent(env, path) || node && (!hasPermission(env, node, 0b100) || !hasPermission(env, node, 0b010))) {
+      return commandResult(env, '', `vim: cannot open '${parsed.tokens[1]}': Permission denied`, 1, cwdBefore);
+    }
+    env.interactivePrompt = {
+      kind: 'editor', operation: 'vim', path,
+      content: node?.type === 'file' ? node.content || '' : '',
+    };
+    return commandResult(env, `"${path}" ${node ? `${(node.content || '').split('\n').length} lines` : '[New File]'}\n-- INSERT MODE -- Enter text one line at a time. :wq saves and quits; :q! discards changes.`, '', 0, cwdBefore);
   }
 
   const executable = command.match(/^\.\/([^\s]+)$/);

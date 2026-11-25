@@ -350,6 +350,7 @@ export function executeFreeCommand(workspace, command) {
   const previousUser = env.user;
   const firstBootUsername = Boolean(env.initialSetup && !env.interactivePrompt);
   const hiddenInput = env.interactivePrompt?.kind === 'password';
+  const editorInput = env.interactivePrompt?.kind === 'editor';
   const loginInput = Boolean(env.loginScreen && !hiddenInput);
   const result = executeCommand(env, command, workspace.commands.map((entry) => entry.command));
   const successfulLogin = !wasLoggedIn && env.loggedIn;
@@ -359,6 +360,7 @@ export function executeFreeCommand(workspace, command) {
     id: `${Date.now()}-${workspace.commands.length}`,
     command: hiddenInput || result.secretInput ? '••••••••' : command,
     passwordInput: hiddenInput || Boolean(result.secretInput),
+    editorInput: Boolean(result.editorInput || editorInput),
     loginInput,
     firstBootUsername,
     cwdBefore: result.cwdBefore,
@@ -376,7 +378,7 @@ export function executeFreeCommand(workspace, command) {
   workspace.commands = workspace.commands.slice(-150);
   const filesystemCommand = /^(?:mkdir|touch|rm|mv|cp|editor|bash|tar)\b|>/.test(command.trim());
   const identityChanged = previousUser !== env.user || wasLoggedIn !== env.loggedIn;
-  const refreshFiles = filesystemCommand || identityChanged;
+  const refreshFiles = filesystemCommand || Boolean(result.filesystemChanged) || identityChanged;
   return {
     entry,
     state: env,
