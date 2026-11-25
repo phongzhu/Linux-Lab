@@ -8,6 +8,7 @@ function enterDigits(value) {
 }
 
 function openBillDetails() {
+  click('PesoPal payment demo');
   click('Tap to Transact');
   click(/Pay a Bill/);
 }
@@ -45,7 +46,7 @@ test('completes a mock bill payment, prints a receipt, and clears it on finish',
   expect(screen.getByText('Payment successful')).toBeInTheDocument();
   expect(screen.getByLabelText('Printed transaction receipt')).toBeInTheDocument();
   click('Finish');
-  expect(screen.getByRole('heading', { name: 'Tap to Transact' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Tap to Transact' })).toBeInTheDocument();
   expect(screen.queryByLabelText('Printed transaction receipt')).not.toBeInTheDocument();
   expect(screen.queryByText(/^PP-\d+$/)).not.toBeInTheDocument();
   jest.useRealTimers();
@@ -57,7 +58,7 @@ test('Back returns to the previous step, and confirmed cancellation resets the k
   fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
   expect(screen.getByText('Choose a service')).toBeInTheDocument();
   fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
-  expect(screen.getByRole('heading', { name: 'Tap to Transact' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Tap to Transact' })).toBeInTheDocument();
 
   click('Tap to Transact');
   click(/Cash In/);
@@ -65,5 +66,5 @@ test('Back returns to the previous step, and confirmed cancellation resets the k
   click('Cancel');
   expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   click('Yes, cancel');
-  expect(screen.getByRole('heading', { name: 'Tap to Transact' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Tap to Transact' })).toBeInTheDocument();
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
+import SreKioskLab from './SreKioskLab';
 import './KioskPage.css';
 
 const BILL_DENOMINATIONS = [20, 50, 100, 500, 1000];
@@ -29,7 +30,7 @@ const serviceDetails = {
   bill: { label: 'Pay a Bill', field: 'Bill reference number', hint: 'Enter the reference number printed on your sample bill.', icon: 'file' },
 };
 
-export default function KioskPage() {
+function PesoPalKiosk() {
   const [step, setStep] = useState('welcome');
   const [service, setService] = useState(null);
   const [reference, setReference] = useState('');
@@ -217,6 +218,17 @@ export default function KioskPage() {
       {cancelPrompt && <div className="kiosk-cancel-overlay" role="presentation"><div className="kiosk-cancel-dialog" role="alertdialog" aria-modal="true" aria-labelledby="cancel-title" aria-describedby="cancel-description"><span className="cancel-mark"><Icon name="close" size={22}/></span><h2 id="cancel-title">Cancel this transaction?</h2><p id="cancel-description">Your entered details and any inserted sample cash will be cleared.</p><div><button className="kiosk-secondary" onClick={() => setCancelPrompt(false)}>Keep going</button><button className="kiosk-danger" onClick={resetTransaction}>Yes, cancel</button></div></div></div>}
     </section>
   </main>;
+}
+
+export default function KioskPage() {
+  const [mode, setMode] = useState('sre');
+  return <div className="kiosk-module">
+    <nav className="kiosk-mode-switch" aria-label="Kiosk simulations">
+      <button className={mode === 'sre' ? 'active' : ''} onClick={() => setMode('sre')}>SRE Incident Lab</button>
+      <button className={mode === 'payments' ? 'active' : ''} onClick={() => setMode('payments')}>PesoPal payment demo</button>
+    </nav>
+    {mode === 'sre' ? <SreKioskLab/> : <PesoPalKiosk/>}
+  </div>;
 }
 
 function StepHeader({ step, subtitle, onBack, onCancel }) {

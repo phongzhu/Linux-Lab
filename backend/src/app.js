@@ -12,6 +12,7 @@ import lessonRoutes from './routes/lessonRoutes.js';
 import attemptRoutes from './routes/attemptRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
 import freeTerminalRoutes from './routes/freeTerminalRoutes.js';
+import sreKioskRoutes from './routes/sreKioskRoutes.js';
 import { notFoundMiddleware } from './middleware/notFound.middleware.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 
@@ -74,6 +75,7 @@ app.use('/api/v1/lessons', lessonRoutes);
 app.use('/api/v1/attempts', attemptRoutes);
 app.use('/api/v1/progress', progressRoutes);
 app.use('/api/v1/terminal', freeTerminalRoutes);
+app.use('/api/v1/kiosk/sre', sreKioskRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
