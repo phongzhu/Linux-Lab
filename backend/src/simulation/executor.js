@@ -898,8 +898,11 @@ export function executeCommand(env, raw, history = []) {
       const actual = Buffer.from(scryptSync(command, account?.passwordSalt || '', 32).toString('hex'), 'hex');
       const expected = Buffer.from(account?.passwordHash || '', 'hex');
       const authenticated = expected.length === actual.length && timingSafeEqual(expected, actual);
+      if (!authenticated) {
+        env.interactivePrompt = { kind: 'password', operation: 'login', username: prompt.username };
+        return commandResult(env, '', 'Login incorrect. Try the password again, or go back to choose another account.', 1, cwdBefore, { secretInput: true });
+      }
       delete env.interactivePrompt;
-      if (!authenticated) return commandResult(env, '', 'Login incorrect. Enter an account name to try again:', 1, cwdBefore, { secretInput: true });
       env.user = prompt.username;
       env.role = env.adminUsers?.includes(prompt.username) ? 'training-admin' : 'user';
       env.loggedIn = true;

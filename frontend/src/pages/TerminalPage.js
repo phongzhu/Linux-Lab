@@ -143,8 +143,7 @@ export default function TerminalPage() {
       return;
     }
     if (!result || !result.state.loggedIn) {
-      setSelectedLogin('');
-      setLoginError('Incorrect password. Select your account and try again.');
+      setLoginError(result?.entry?.stderr || result?.entry?.stdout || 'Incorrect password. Try again, or choose Back to select another account.');
     } else {
       setCurrentPath(`/home/${selectedLogin}`);
       setSelectedLogin('');
